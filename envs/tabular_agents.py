@@ -55,26 +55,32 @@ def evaluate_policy(policy: np.ndarray,
     np.random.seed(seed)
     env = make_sepsis_env()
 
-    returns, lengths, intensities = [], [], []
+    returns, lengths, intensities, survivals = [], [], [], []
     for _ in range(n_episodes):
         obs, _ = env.reset(seed=np.random.randint(100_000))
-        total_r, steps, total_intensity, done = 0.0, 0, 0.0, False
+        total_r, steps, total_intensity, last_r, done = 0.0, 0, 0.0, 0.0, False
         while not done:
             action = int(policy[int(obs)])
             obs, r, te, tr, _ = env.step(action)
             total_r += r
+            last_r = r                       # terminal step carries the survival signal
             total_intensity += INTENSITY[action]
             steps += 1
             done = te or tr
         returns.append(total_r)
         lengths.append(steps)
         intensities.append(total_intensity / max(steps, 1))
+        # Survival is read from the terminal reward (survival -> ~+1, death -> ~0),
+        # which is robust to the accumulated intensity penalty. This MATCHES the
+        # Config B definition (sepsis_rl.evaluate_conditions) so the two configs
+        # are directly comparable.
+        survivals.append(1.0 if last_r > 0.5 else 0.0)
 
     env.close()
     returns = np.array(returns)
     return {
         'mean_return':    float(np.mean(returns)),
-        'survival_rate':  float(np.mean(returns > 0)),
+        'survival_rate':  float(np.mean(survivals)),
         'mean_ep_length': float(np.mean(lengths)),
         'mean_intensity': float(np.mean(intensities)),
         'returns':        returns,

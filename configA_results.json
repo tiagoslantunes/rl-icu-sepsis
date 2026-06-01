@@ -1,0 +1,26 @@
+{
+  "random": {
+    "mean_return": 0.5876775,
+    "survival_rate": 0.687,
+    "mean_ep_length": 9.912,
+    "mean_intensity": 0.4943068781649639
+  },
+  "policy_iteration": {
+    "mean_return": 0.7506525000000001,
+    "survival_rate": 0.788,
+    "mean_ep_length": 9.807,
+    "mean_intensity": 0.16295853081037187
+  },
+  "q_learning": {
+    "mean_return": 0.6115125,
+    "survival_rate": 0.713,
+    "mean_ep_length": 10.556,
+    "mean_intensity": 0.48610299448588096
+  },
+  "sarsa": {
+    "mean_return": 0.6312725,
+    "survival_rate": 0.726,
+    "mean_ep_length": 10.398,
+    "mean_intensity": 0.46219591858052045
+  }
+}
