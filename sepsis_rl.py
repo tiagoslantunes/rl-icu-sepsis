@@ -34,6 +34,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from envs.wrappers import make_clinical_env
+from envs.env_setup import INTENSITY, N_ACTIONS
 
 # --------------------------------------------------------------------------- #
 # Globals / setup
@@ -46,17 +47,23 @@ LOGS_DIR = "logs"
 
 ALGOS = {"DQN": DQN, "PPO": PPO, "A2C": A2C}
 
+# Discount factor: 1.0 follows the ICU-Sepsis paper convention (finite, short
+# episodes; the objective is survival probability) and MATCHES Config A, so the
+# A-vs-B comparison is apples-to-apples. With ~10-step episodes there is no
+# bootstrapping-stability reason to discount.
+GAMMA = 1.0
+
 # Sensible defaults per algorithm (close to the original notebook).
 DEFAULT_HP = {
     "DQN": dict(policy_kwargs=dict(net_arch=[256, 256]),
                 learning_rate=1e-4, buffer_size=100_000, learning_starts=1000,
-                batch_size=64, gamma=0.99, train_freq=4, target_update_interval=1000,
+                batch_size=64, gamma=GAMMA, train_freq=4, target_update_interval=1000,
                 exploration_fraction=0.20, exploration_final_eps=0.05),
     "PPO": dict(policy_kwargs=dict(net_arch=[256, 256]),
                 learning_rate=3e-4, n_steps=1024, batch_size=64, n_epochs=10,
-                gamma=0.99, gae_lambda=0.95, clip_range=0.2, ent_coef=0.01),
+                gamma=GAMMA, gae_lambda=0.95, clip_range=0.2, ent_coef=0.01),
     "A2C": dict(policy_kwargs=dict(net_arch=[256, 256]),
-                learning_rate=7e-4, n_steps=5, gamma=0.99, gae_lambda=1.0, ent_coef=0.01),
+                learning_rate=7e-4, n_steps=5, gamma=GAMMA, gae_lambda=1.0, ent_coef=0.01),
 }
 
 # Robustness buckets. The environment configuration is NEVER changed: every
@@ -216,7 +223,8 @@ def evaluate_conditions(
     model = _load_model(algo, tag, use_best)
     obs_rms = _load_obs_rms(tag)
 
-    raw = {b: {"ret": [], "surv": []} for b in BUCKETS}
+    raw = {b: {"ret": [], "surv": [], "intens": []} for b in BUCKETS}
+    action_counts = np.zeros(N_ACTIONS, dtype=np.int64)  # for the dose-grid heatmap
     env = make_clinical_env()
     for ep in range(n_episodes):
         obs, info = env.reset(seed=seed_offset + ep)
@@ -224,15 +232,21 @@ def evaluate_conditions(
         ep_missing = info.get("missing_features") is not None
         ep_acute = False
         done, ep_ret, last_r = False, 0.0, 0.0
+        ep_intens, ep_steps = 0.0, 0
         while not done:
             action, _ = model.predict(_normalize_obs(obs, obs_rms), deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(int(action))
+            a = int(action)
+            obs, reward, terminated, truncated, info = env.step(a)
             done = terminated or truncated
             ep_ret += reward
             last_r = reward
+            ep_intens += INTENSITY[a]
+            action_counts[a] += 1
+            ep_steps += 1
             if info.get("acute_event", False):
                 ep_acute = True
         surv = 1.0 if last_r > 0.5 else 0.0
+        intens = ep_intens / max(ep_steps, 1)            # mean treatment intensity / step
 
         buckets_hit = ["All"]
         if not ep_noisy and not ep_missing and not ep_acute:
@@ -246,16 +260,21 @@ def evaluate_conditions(
         for b in buckets_hit:
             raw[b]["ret"].append(ep_ret)
             raw[b]["surv"].append(surv)
+            raw[b]["intens"].append(intens)
     env.close()
 
     results: Dict[str, Dict[str, float]] = {}
     for b in BUCKETS:
         if raw[b]["ret"]:
             results[b] = {"return": float(np.mean(raw[b]["ret"])),
-                          "survival": float(np.mean(raw[b]["surv"]))}
+                          "survival": float(np.mean(raw[b]["surv"])),
+                          "intensity": float(np.mean(raw[b]["intens"]))}
             print(f"[{tag}] {b:8s} n={len(raw[b]['ret']):4d}  "
                   f"return={results[b]['return']:.4f}  "
-                  f"survival={results[b]['survival']:.1%}")
+                  f"survival={results[b]['survival']:.1%}  "
+                  f"intensity={results[b]['intensity']:.3f}")
+    # Overall action distribution (not a bucket; filtered out by BUCKETS-based plots).
+    results["__actions__"] = action_counts.tolist()
     return results
 
 
@@ -277,6 +296,141 @@ def random_baseline(n_episodes: int = 1000, seed: int = SEED) -> Dict[str, float
     out = {"return": float(np.mean(returns)), "survival": float(np.mean(survivals))}
     print(f"[random] return={out['return']:.4f}  survival={out['survival']:.1%}")
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Creative extension: clinical interpretability (feature importance)
+# --------------------------------------------------------------------------- #
+def feature_importance_dqn(
+    tag: str,
+    n_states: int = 500,
+    seed: int = SEED,
+    top_n: int = 20,
+    filename: str = "configB_feature_importance.png",
+    show: bool = True,
+):
+    """Permutation feature importance for a trained DQN, on its Q-network.
+
+    For each of the 47 clinical features we permute its values across a sample of
+    states and measure the mean |Delta Q| on the originally-chosen action. Large
+    values = the agent's decision relies heavily on that feature. If the run used
+    VecNormalize, the saved obs stats are applied first so |Delta Q| is computed on
+    the same normalized inputs the network was trained on.
+
+    Returns ``(importances, order)`` and saves a horizontal bar chart highlighting
+    established sepsis-severity markers.
+    """
+    import torch
+    import matplotlib.pyplot as plt
+    from envs.continuous_sepsis_env import FEATURE_NAMES
+
+    ensure_dirs(OUTPUT_DIR)
+    model = _load_model("DQN", tag, use_best=True)
+    obs_rms = _load_obs_rms(tag)
+
+    # Sample patient states by rolling out a random policy on the clinical env.
+    rng = np.random.RandomState(seed)
+    env = make_clinical_env()
+    states = []
+    while len(states) < n_states:
+        obs, _ = env.reset(seed=int(rng.randint(100_000)))
+        states.append(obs.copy())
+        done = False
+        while not done and len(states) < n_states:
+            obs, _, te, tr, _ = env.step(env.action_space.sample())
+            states.append(obs.copy())
+            done = te or tr
+    env.close()
+    states = np.asarray(states[:n_states], dtype=np.float32)
+
+    def qvals(arr):
+        t = torch.as_tensor(np.asarray(_normalize_obs(arr, obs_rms), dtype=np.float32),
+                            device=model.device)
+        with torch.no_grad():
+            return model.policy.q_net(t).cpu().numpy()
+
+    base_q = qvals(states)
+    chosen = base_q.argmax(axis=1)
+    base_chosen = base_q[np.arange(len(states)), chosen]
+
+    importances = np.zeros(len(FEATURE_NAMES))
+    for j in range(len(FEATURE_NAMES)):
+        perturbed = states.copy()
+        perturbed[:, j] = rng.permutation(perturbed[:, j])
+        pq = qvals(perturbed)[np.arange(len(states)), chosen]
+        importances[j] = float(np.mean(np.abs(base_chosen - pq)))
+
+    order = np.argsort(importances)[::-1]
+    markers = {"SOFA", "Lactate", "Mean_BP", "Systolic_BP", "Diastolic_BP",
+               "Urine_Output", "Creatinine", "HR", "RespRate", "GCS", "FiO2"}
+    labels = [FEATURE_NAMES[i] for i in order[:top_n]]
+    vals = importances[order[:top_n]]
+    colors = ["#E53935" if l in markers else "#42A5F5" for l in labels]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.barh(range(top_n)[::-1], vals, color=colors, alpha=0.85)
+    ax.set_yticks(range(top_n)[::-1]); ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xlabel("Mean |Delta Q| when feature permuted")
+    ax.set_title(f"DQN feature importance - top {top_n} clinical variables\n"
+                 "(red = established sepsis-severity markers)", fontsize=11)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(facecolor="#E53935", label="Sepsis severity marker"),
+                       Patch(facecolor="#42A5F5", label="Other clinical variable")],
+              loc="lower right")
+    fig.tight_layout()
+    path = os.path.join(OUTPUT_DIR, filename)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    print(f"Saved {path}")
+    print("Top 10 decision-relevant features:")
+    for r, idx in enumerate(order[:10], 1):
+        mk = " <- sepsis marker" if FEATURE_NAMES[idx] in markers else ""
+        print(f"  {r:2d}. {FEATURE_NAMES[idx]:<16s} {importances[idx]:.5f}{mk}")
+    plt.show() if show else plt.close(fig)
+    return importances, order
+
+
+# --------------------------------------------------------------------------- #
+# Cross-config comparison (reads the REAL Config A metrics from JSON)
+# --------------------------------------------------------------------------- #
+def compare_configs(
+    results_b: Dict[str, Dict[str, object]],
+    configA_path: str = "configA_results.json",
+    condition: str = "All",
+):
+    """Build an honest Config A vs Config B table.
+
+    Config A numbers are read from ``configA_results.json`` (produced by the
+    Config A notebook) - never hard-coded. Config B numbers come from
+    ``evaluate_conditions`` results passed in ``results_b``.
+    """
+    import json
+    import pandas as pd
+
+    rows = []
+    if os.path.exists(configA_path):
+        with open(configA_path) as f:
+            a = json.load(f)
+        nice = {"random": "Random", "policy_iteration": "Policy Iteration",
+                "q_learning": "Q-Learning", "sarsa": "SARSA"}
+        for key, label in nice.items():
+            if key in a:
+                m = a[key]
+                rows.append({"Config": "A", "Agent": label,
+                             "Return": round(m["mean_return"], 4),
+                             "Survival": f"{m['survival_rate']*100:.1f}%",
+                             "Intensity": round(m["mean_intensity"], 3)})
+    else:
+        print(f"  ({configA_path} not found - run the Config A notebook first)")
+
+    for label, res in results_b.items():
+        cell = res.get(condition)
+        if cell is None:
+            continue
+        rows.append({"Config": "B", "Agent": label,
+                     "Return": round(cell["return"], 4),
+                     "Survival": f"{cell['survival']*100:.1f}%",
+                     "Intensity": round(cell.get("intensity", float("nan")), 3)})
+    return pd.DataFrame(rows)
 
 
 # --------------------------------------------------------------------------- #
@@ -343,22 +497,22 @@ def plot_learning_curves(
         if show_trend and len(ts) >= 2:
             coeffs = np.polyfit(ts, sm, 1)
             trend  = np.polyval(coeffs, ts)
-            slope  = coeffs[0] * 1e5   # por 100k passos
+            slope  = coeffs[0] * 1e5   # per 100k steps
             ax.plot(ts, trend, ls="-", lw=2.0, color=line.get_color(), alpha=0.5,
-                    label=f"{label} tendência ({slope:+.4f}/100k)")
-            print(f"  [{label}] declive = {slope:+.5f} por 100k passos "
-                  f"({'a subir' if slope > 0 else 'a descer'})")
+                    label=f"{label} trend ({slope:+.4f}/100k)")
+            print(f"  [{label}] slope = {slope:+.5f} per 100k steps "
+                  f"({'rising' if slope > 0 else 'falling'})")
         plotted += 1
 
     if baseline is not None:
         ax.axhline(baseline, color="gray", ls="--", lw=1.5, label="Random baseline")
     ax.set_xlabel("Timesteps")
-    ax.set_ylabel(f"Mean eval return (EMA α={smooth})")
+    ax.set_ylabel(f"Mean eval return (EMA alpha={smooth})")
     title = "Config B - Learning curves"
     if zoom_steps:
-        title += f" (primeiros {zoom_steps:,} passos)"
+        title += f" (first {zoom_steps:,} steps)"
     if show_trend:
-        title += " + tendência linear"
+        title += " + linear trend"
     ax.set_title(title)
     if plotted:
         ax.legend(fontsize=8)
@@ -379,14 +533,14 @@ def plot_curves_grid(
     zoom_steps: Optional[int] = None,
     show: bool = True,
 ):
-    """Plota um subplot por algoritmo, lado a lado, com curva EMA e reta de
-    tendência linear a cheio (mesma cor, alpha mais baixo).
+    """One subplot per algorithm, side by side, with an EMA curve and a solid
+    linear-trend line (same colour, lower alpha).
 
     Args:
-        tags_labels : tag -> label, um por algoritmo
-        baseline    : linha horizontal do agente aleatório
+        tags_labels : tag -> label, one per algorithm
+        baseline    : horizontal line for the random agent
         smooth      : EMA alpha
-        zoom_steps  : limitar eixo x aos primeiros N passos
+        zoom_steps  : limit the x-axis to the first N steps
     """
     import matplotlib.pyplot as plt
 
@@ -414,15 +568,15 @@ def plot_curves_grid(
         # Curva EMA
         ax.plot(ts, sm, lw=2.5, color="steelblue", label="EMA")
 
-        # Reta de tendência — a cheio, mesma cor, alpha médio
+        # Trend line - solid, same colour, medium alpha
         if len(ts) >= 2:
             coeffs = np.polyfit(ts, sm, 1)
             trend  = np.polyval(coeffs, ts)
             slope  = coeffs[0] * 1e5
             ax.plot(ts, trend, ls="-", lw=2.0, color="steelblue", alpha=0.45,
-                    label=f"Tendência ({slope:+.4f}/100k)")
-            direction = "a subir ↑" if slope > 0 else "a descer ↓"
-            print(f"  [{label}] declive = {slope:+.5f}/100k passos  {direction}")
+                    label=f"Trend ({slope:+.4f}/100k)")
+            direction = "rising" if slope > 0 else "falling"
+            print(f"  [{label}] slope = {slope:+.5f}/100k steps  {direction}")
 
         if baseline is not None:
             ax.axhline(baseline, color="gray", ls="--", lw=1.2,
@@ -430,14 +584,14 @@ def plot_curves_grid(
 
         title = label
         if zoom_steps:
-            title += f"\n(primeiros {zoom_steps:,} passos)"
+            title += f"\n(first {zoom_steps:,} steps)"
         ax.set_title(title, fontsize=11)
         ax.set_xlabel("Timesteps")
         ax.legend(fontsize=8)
         ax.grid(alpha=0.3)
 
-    axes[0].set_ylabel(f"Mean eval return (EMA α={smooth})")
-    fig.suptitle("Config B — Curvas de aprendizagem por algoritmo", fontsize=13)
+    axes[0].set_ylabel(f"Mean eval return (EMA alpha={smooth})")
+    fig.suptitle("Config B - Learning curves per algorithm", fontsize=13)
     fig.tight_layout()
     path = os.path.join(OUTPUT_DIR, filename)
     fig.savefig(path, dpi=150, bbox_inches="tight")
@@ -496,26 +650,76 @@ def results_table(
 
     rows = []
     for label, res in results_by_agent.items():
-        cell = res.get(condition, res[list(res)[-1]])
+        cell = res.get(condition)
+        if cell is None:
+            continue
         row = {"Agent": label,
                f"Return ({condition})": round(cell["return"], 4),
-               f"Survival ({condition})": f"{cell['survival']:.1%}"}
+               f"Survival ({condition})": f"{cell['survival']:.1%}",
+               f"Intensity ({condition})": round(cell.get("intensity", float("nan")), 3)}
         if random_ret:
             row["vs Random"] = f"{(cell['return'] / random_ret - 1) * 100:+.1f}%"
         rows.append(row)
     return pd.DataFrame(rows)
 
 
+def plot_dose_grid(
+    results_by_agent: Dict[str, Dict[str, object]],
+    filename: str = "configB_dose_grid.png",
+    show: bool = True,
+):
+    """5x5 vasopressor x IV-fluid dose heatmaps (one per agent), from the action
+    distribution collected in ``evaluate_conditions`` (the ``__actions__`` entry).
+
+    Reveals each learned policy's treatment philosophy (conservative vs aggressive),
+    which is the clinical-interpretability counterpart of the Config A action plots.
+    """
+    import matplotlib.pyplot as plt
+
+    ensure_dirs(OUTPUT_DIR)
+    agents = [a for a in results_by_agent if "__actions__" in results_by_agent[a]]
+    if not agents:
+        print("  (no '__actions__' in results - re-run evaluate_conditions)")
+        return None
+    n = len(agents)
+    fig, axes = plt.subplots(1, n, figsize=(4.2 * n, 4))
+    if n == 1:
+        axes = [axes]
+    levels = ["None", "Low", "Med", "High", "V.High"]
+    for ax, label in zip(axes, agents):
+        counts = np.asarray(results_by_agent[label]["__actions__"], dtype=float)
+        grid = counts.reshape(5, 5)                  # rows = vaso, cols = fluid
+        grid = grid / grid.sum() if grid.sum() else grid
+        im = ax.imshow(grid, cmap="Blues", vmin=0)
+        for i in range(5):
+            for j in range(5):
+                ax.text(j, i, f"{grid[i, j]*100:.0f}", ha="center", va="center",
+                        fontsize=8, color="black")
+        ax.set_xticks(range(5)); ax.set_xticklabels(levels, rotation=45, fontsize=8)
+        ax.set_yticks(range(5)); ax.set_yticklabels(levels, fontsize=8)
+        ax.set_xlabel("IV fluid"); ax.set_ylabel("Vasopressor")
+        ax.set_title(f"{label}\n(% of steps)", fontsize=10)
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.suptitle("Config B - Learned dose distribution (5x5 action grid)", fontsize=12)
+    fig.tight_layout()
+    path = os.path.join(OUTPUT_DIR, filename)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    print(f"Saved {path}")
+    plt.show() if show else plt.close(fig)
+    return path
+
+
 # --------------------------------------------------------------------------- #
 # Hyperparameter tuning (Optuna) - short proxy budget
 # --------------------------------------------------------------------------- #
 def _suggest_hp(trial, algo: str) -> dict:
+    # gamma is fixed at GAMMA (=1.0, env convention) and intentionally NOT tuned,
+    # so it stays consistent with Config A and across all trials.
     if algo == "DQN":
         return dict(
             learning_rate=trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True),
             buffer_size=trial.suggest_categorical("buffer_size", [50_000, 100_000]),
             batch_size=trial.suggest_categorical("batch_size", [64, 128, 256]),
-            gamma=trial.suggest_float("gamma", 0.95, 0.999),
             train_freq=trial.suggest_categorical("train_freq", [1, 4, 8]),
             exploration_fraction=trial.suggest_float("exploration_fraction", 0.1, 0.4),
             target_update_interval=trial.suggest_categorical(
@@ -527,7 +731,6 @@ def _suggest_hp(trial, algo: str) -> dict:
             learning_rate=trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True),
             n_steps=n_steps,
             batch_size=trial.suggest_categorical("batch_size", [64, 128]),
-            gamma=trial.suggest_float("gamma", 0.95, 0.999),
             gae_lambda=trial.suggest_float("gae_lambda", 0.9, 0.99),
             clip_range=trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3]),
             ent_coef=trial.suggest_float("ent_coef", 1e-4, 0.05, log=True),
@@ -536,7 +739,6 @@ def _suggest_hp(trial, algo: str) -> dict:
     return dict(
         learning_rate=trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True),
         n_steps=trial.suggest_categorical("n_steps", [5, 8, 16]),
-        gamma=trial.suggest_float("gamma", 0.95, 0.999),
         gae_lambda=trial.suggest_float("gae_lambda", 0.9, 1.0),
         ent_coef=trial.suggest_float("ent_coef", 1e-4, 0.05, log=True),
     )
@@ -619,18 +821,18 @@ def plot_best_trial_curves(
     filename: str = "configB_optuna_best_curves.png",
     show: bool = True,
 ):
-    """Para cada algoritmo, carrega o eval log do melhor trial do Optuna e plota
-    a curva com EMA + linha de tendência linear (declive visível).
+    """For each algorithm, load the eval log of the best Optuna trial and plot the
+    curve with EMA + a linear-trend line (visible slope).
 
     Args:
-        algos_or_studies : pode ser:
-            - dict algo -> optuna.Study  (quando tens os studies em memória)
-            - list/tuple de nomes de algos  ex: ['DQN','PPO','A2C']
-              (descobre o melhor trial directamente dos logs em disco,
-               não precisa do kernel ter corrido o Optuna)
-        baseline : return do agente aleatório
+        algos_or_studies : either
+            - dict algo -> optuna.Study  (when the studies are in memory)
+            - list/tuple of algo names, e.g. ['DQN','PPO','A2C']
+              (finds the best trial directly from the on-disk logs, so the
+               kernel need not have run Optuna)
+        baseline : random-agent return
         smooth   : EMA alpha
-        n_trials : número de trials que foram corridos (para a busca em disco)
+        n_trials : number of trials run (for the on-disk search)
     """
     import matplotlib.pyplot as plt
 
@@ -653,34 +855,34 @@ def plot_best_trial_curves(
     for algo, best_t, tag in items:
         ts, mean, _ = _load_eval_log(tag)
         if ts is None:
-            print(f"  (sem eval log para '{tag}')")
+            print(f"  (no eval log for '{tag}')")
             continue
 
         if len(ts) < 3:
-            print(f"  [{algo}] trial {best_t} tem apenas {len(ts)} ponto(s) de "
-                  f"avaliação — não é possível traçar curva. "
-                  f"Re-corre tune() para obter eval logs com múltiplos pontos.")
+            print(f"  [{algo}] trial {best_t} has only {len(ts)} evaluation "
+                  f"point(s) - cannot draw a curve. "
+                  f"Re-run tune() to get eval logs with multiple points.")
             continue
 
         sm = _ema(mean, smooth)
         line, = ax.plot(ts, sm, lw=2.5, label=f"{algo} (trial {best_t})")
         ax.plot(ts, mean, lw=0.8, alpha=0.15, color=line.get_color())
 
-        # Linha de tendência linear
+        # Linear trend line
         coeffs = np.polyfit(ts, sm, 1)
         trend = np.polyval(coeffs, ts)
-        slope = coeffs[0] * 1e5          # por 100k passos
+        slope = coeffs[0] * 1e5          # per 100k steps
         ax.plot(ts, trend, ls="--", lw=1.5, color=line.get_color(),
-                label=f"{algo} tendência ({slope:+.4f}/100k steps)")
-        print(f"[{algo}] melhor trial={best_t}  declive={slope:+.5f}/100k steps")
+                label=f"{algo} trend ({slope:+.4f}/100k steps)")
+        print(f"[{algo}] best trial={best_t}  slope={slope:+.5f}/100k steps")
         plotted += 1
 
     if baseline is not None:
         ax.axhline(baseline, color="gray", ls=":", lw=1.5, label="Random baseline")
 
     ax.set_xlabel("Timesteps")
-    ax.set_ylabel(f"Mean eval return (EMA α={smooth})")
-    ax.set_title("Config B — Melhor trial Optuna por algoritmo + tendência linear")
+    ax.set_ylabel(f"Mean eval return (EMA alpha={smooth})")
+    ax.set_title("Config B - Best Optuna trial per algorithm + linear trend")
     if plotted:
         ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
