@@ -1,5 +1,15 @@
-plots/configA_action_distribution.png
-plots/configA_survival_intensity.png
-plots/configA_learning_curves.png
-plots/configA_env_exploration.png
-envs/__pycache__
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Generated training artifacts (re-created by running the notebooks)
+models/
+logs/
+outputs/
+plots/
+*.zip
+optuna_best_params.json
+
+# Keep the one committed reference figure
+!plots/configA_env_exploration.png

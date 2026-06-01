@@ -1,20 +1,55 @@
 # Sepsis Treatment Optimization via Reinforcement Learning
 
-## 📌 Project Overview
-Sepsis is a life-threatening condition in Intensive Care Units (ICUs) that requires dynamic, high-stakes decision-making.  
-This project applies Reinforcement Learning (RL) to learn optimal treatment policies directly from patient data: the objective is to balance the administration of vasopressors and intravenous fluids—maximizing patient survival rates while minimizing unnecessary treatment intensity.
+Reinforcement Learning course project (Master in Data Science & Advanced Analytics).
+We learn ICU sepsis treatment policies (vasopressor + IV-fluid dosing) on the
+`Sepsis/ICU-Sepsis-v2` benchmark (MIMIC-III derived), balancing **patient
+survival** against **treatment intensity** (a parsimony penalty `lam=0.02`).
 
-## Project Structure
-The project is divided into two main configurations of increasing complexity:
+## Project structure
 
-- Configuration A (Tabular RL): a discrete Markov Decision Process (MDP) with 716 states and 25 actions; we implement classical algorithms (Policy Iteration, Q-Learning, SARSA) to establish a strong baseline and understand the core environment dynamics.
-- Configuration B (Continuous Deep RL): a clinically grounded environment mapping to a 47-dimensional continuous feature space — this phase tests the agent's robustness against real-world clinical failure modes:
-  - Episodic observation noise (monitor malfunctions).
-  - Episodic missing observations (unavailable lab results).
-  - Acute clinical events (sudden, unpredictable patient deterioration).
+```
+envs/
+  env_setup.py             # constants + make_sepsis_env() (Config A, discrete MDP)
+  continuous_sepsis_env.py # ContinuousICUSepsisEnv (Config B, 47-dim observations)
+  wrappers.py              # clinical failure-mode wrappers + make_clinical_env()
+  tabular_agents.py        # Config A agents: PolicyIteration, QLearning, SARSA
+sepsis_rl.py               # Config B: DQN/PPO/A2C training, evaluation, plots, Optuna
+rl_sepsis_project.ipynb    # Config A notebook (tabular methods + analysis)
+rl_sepsis_projectB.ipynb   # Config B notebook (calls sepsis_rl.py)
+configA_results.json       # real Config A metrics, produced by the Config A notebook
+requirements.txt
+plots/                     # all figures are written here
+```
 
-## How We Are Approaching This
-To ensure high-quality delivery, the project follows an iterative, three-phase methodology:
-1. Baselines & Tabular: validate the environment setup, implement model-based and model-free tabular agents and establish baseline survival metrics.
-2. Deep RL & Stress Testing: transition to continuous-state agents to handle high-dimensional data, rigorously testing policy robustness against the injected clinical failure wrappers.
-3. Clinical Translation & Reporting: translate technical metrics into clinical insights — we will finalize a creative extension (e.g., Explainable AI or reward shaping) and focus the final report on actionable, comparative analysis.
+## Configurations
+
+- **Configuration A — Tabular RL.** Discrete MDP, 716 states × 25 actions. The full
+  model (`P`, `R`) is available, so we run **Policy Iteration** (model-based),
+  **Q-Learning** and **SARSA** (model-free TD). The Q-table is only 17,900 entries.
+- **Configuration B — Continuous Deep RL.** 47-dim continuous physiological
+  observations with three clinical failure-mode wrappers: episodic observation
+  noise, episodic missing labs, and rare acute deterioration events. We train
+  **DQN**, **PPO** and **A2C** (with/without observation normalization).
+
+## Reproducibility / how to run
+
+1. `pip install -r requirements.txt`
+2. Run the notebooks **in Jupyter / UTF-8** (the env prints contain Unicode; a raw
+   Windows `cp1252` console can raise `UnicodeEncodeError`).
+3. **Config A first** (`rl_sepsis_project.ipynb`): runs end-to-end in ~minutes and
+   writes the real metrics to `configA_results.json`.
+4. **Config B** (`rl_sepsis_projectB.ipynb`): `TIMESTEPS=150_000` is a fast preview;
+   set `1_000_000` for report-quality runs (several hours; GPU recommended).
+   The Config B comparison table reads `configA_results.json`, so run Config A first.
+
+All reported numbers use **fixed evaluation seeds**, deterministic policies, and the
+**default** `make_clinical_env()` parameters. The clinical wrappers are never altered
+for main results; robustness is measured by bucketing episodes via the `info` flags.
+
+## Creative extension
+
+**Robustness + clinical interpretability audit:** per-failure-mode degradation
+(Clean / Noisy / Missing / Acute), DQN feature-importance via Q-value perturbation,
+and treatment-intensity / dose-grid analysis of the learned policies.
+
+> Disclaimer: results are on a **simulated** benchmark and are **not** clinical advice.
