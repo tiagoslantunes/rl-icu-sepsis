@@ -7,9 +7,11 @@ __pycache__/
 models/
 logs/
 outputs/
-plots/
+plots/*
 *.zip
 optuna_best_params.json
 
-# Keep the one committed reference figure
+# Keep committed report figures
+!plots/
 !plots/configA_env_exploration.png
+!plots/configB_*.png

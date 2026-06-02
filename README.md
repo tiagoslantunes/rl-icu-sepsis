@@ -46,6 +46,9 @@ All reported numbers use **fixed evaluation seeds**, deterministic policies, and
 **default** `make_clinical_env()` parameters. The clinical wrappers are never altered
 for main results; robustness is measured by bucketing episodes via the `info` flags.
 
+The branch includes the final generated report figures under `plots/` so the
+analysis can be inspected without rerunning the deep-RL training.
+
 ## Creative extension
 
 **Robustness + clinical interpretability audit:** per-failure-mode degradation
