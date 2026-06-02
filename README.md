@@ -49,6 +49,22 @@ for main results; robustness is measured by bucketing episodes via the `info` fl
 The branch includes the final generated report figures under `plots/` so the
 analysis can be inspected without rerunning the deep-RL training.
 
+### Config B 1M run
+
+For report-quality deep-RL evidence, `run_configB_1m.py` trains the three
+strongest normalized Config B candidates for `1_000_000` timesteps each:
+`DQN-v2 1M`, `PPO-v2 1M`, and `A2C 1M`. The generated outputs are committed as:
+
+- `configB_1m_results.json`
+- `configB_1m_compare_configs.csv`
+- `plots/configB_1m_*.png`
+
+In the 1M run, `PPO-v2 1M` is the best Config B policy by survival/return
+(`0.5955` mean return, `67.8%` survival), but it still remains below the
+tabular Config A methods. This is an important result: the continuous, noisy,
+partially missing clinical setting is substantially harder than the discrete
+known-MDP setting.
+
 ## Creative extension
 
 **Robustness + clinical interpretability audit:** per-failure-mode degradation

@@ -1,0 +1,8 @@
+Config,Agent,Return,Survival,Intensity
+A,Random,0.5877,68.7%,0.494
+A,Policy Iteration,0.7507,78.8%,0.163
+A,Q-Learning,0.6115,71.3%,0.486
+A,SARSA,0.6313,72.6%,0.462
+B,DQN-v2 1M,0.5835,64.8%,0.37
+B,PPO-v2 1M,0.5955,67.8%,0.478
+B,A2C 1M,0.5839,65.0%,0.372
