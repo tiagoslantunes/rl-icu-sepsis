@@ -84,6 +84,7 @@ def evaluate_policy(policy: np.ndarray,
         'mean_ep_length': float(np.mean(lengths)),
         'mean_intensity': float(np.mean(intensities)),
         'returns':        returns,
+        'survivals':      np.array(survivals),
     }
 
 

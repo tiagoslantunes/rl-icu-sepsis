@@ -13,5 +13,4 @@ optuna_best_params.json
 
 # Keep committed report figures
 !plots/
-!plots/configA_*.png
-!plots/configB_*.png
+!plots/config*.png
