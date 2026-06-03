@@ -541,7 +541,9 @@ reach $\approx74\%$, \emph{exceeding} the expert ($71.3\%$). This is a strong,
 honest result: on the easy part of the distribution the learned policies are at
 least as good as the AI~Clinician, while on the full clinical distribution they are
 limited by the same irreducible mortality. Learning curves and the per-condition
-robustness bars are in Appendix figures \ref{fig:b_curves}--\ref{fig:b_robust}.
+robustness bars are in Appendix figures \ref{fig:b_curves}--\ref{fig:b_robust};
+the tuned-curve grid adds a linear trend overlay, checking whether the $1$M-step
+policies are still improving or have mostly plateaued.
 
 The return column should not be read as a pure survival ranking. A2C has the best
 mean return ($0.626$) despite the lowest survival among the learned deep agents,
@@ -733,7 +735,8 @@ shaping-dependent numbers as if they arose from the bare objective.
 overlapping confidence intervals on overall survival; the clearer separations are
 on clean episodes ($\approx74\%$ vs $\approx69\%$ random) and in the across-seed
 study, where the small standard deviations ($\le1\%$) make the modest
-expert-matching gains credible rather than noise.
+expert-matching gains credible rather than noise. The trend-line grid also shows
+that we inspected optimisation dynamics instead of reporting only final scores.
 
 \textbf{Connection to theory.} The project instantiates the full arc of the course:
 dynamic programming (Policy Iteration), on- and off-policy temporal-difference
@@ -905,8 +908,8 @@ spent mainly on methodology and interpretation.
 \centering
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_1m_learning_curves.png}
-\caption{Config~B $1$M learning curves.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_tuned_grid.png}
+\caption{Tuned $1$M curves with linear trends.}
 \label{fig:b_curves}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
