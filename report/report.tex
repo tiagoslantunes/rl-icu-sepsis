@@ -1,9 +1,9 @@
 \documentclass[11pt,a4paper]{article}
 
 % ── Layout ────────────────────────────────────────────────────────
-\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage[a4paper,margin=2.35cm]{geometry}
 \usepackage{setspace}
-\setstretch{1.15}
+\setstretch{1.10}
 
 % ── Encoding & language ───────────────────────────────────────────
 \usepackage[utf8]{inputenc}
@@ -67,7 +67,7 @@
 
 % ── Paragraph spacing ─────────────────────────────────────────────
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{3pt}
+\setlength{\parskip}{2pt}
 
 % ── Hyperlinks ────────────────────────────────────────────────────
 \usepackage[colorlinks=true, linkcolor=novagreen, citecolor=darkgray,
@@ -96,15 +96,12 @@ Sepsis Treatment Optimisation in the ICU}\\[10pt]
 \includegraphics[width=0.74\textwidth]{configAB_pareto.png}
 \vspace{0.6cm}
 
-% >>> FILL IN your group's name and the remaining members/numbers <<<
 {\small\bfseries\color{darkgray} GROUP}\\[0.8em]
 {\small\color{darkgray}
   \begin{tabular}{ll}
-    Tiago Antunes            & 20250357 \\[4pt]
-    \textit{<< member 2 >>}  & \textit{<< number >>} \\[4pt]
-    \textit{<< member 3 >>}  & \textit{<< number >>} \\[4pt]
-    \textit{<< member 4 >>}  & \textit{<< number >>} \\[4pt]
-    \textit{<< member 5 >>}  & \textit{<< number >>} \\[4pt]
+    Gonçalo Gomes Arrobas        & 20250421 \\[4pt]
+    Maria Tavares Pimentel       & 20250466 \\[4pt]
+    Tiago Stubner Lucas Antunes  & 20250357 \\[4pt]
   \end{tabular}
 }
 \vfill
@@ -207,9 +204,73 @@ laboratory values (probability $0.15$, four features zeroed), and rare acute
 events (probability $0.01$ per step, an irreversible death independent of
 treatment).
 
+\subsection{How this report answers the brief}
+The project statement asks for more than a leaderboard. It asks us to understand
+the environment, implement appropriate RL algorithms for each configuration,
+compare them fairly, and add a creative extension that is clinically meaningful.
+We therefore structure the work around four explicit requirements.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.27\textwidth}X}
+\toprule
+\tH{Brief requirement} & \tH{Our response} \\
+\gmid
+Explore the environment &
+We inspect the state/action spaces, reward sparsity, treatment-intensity penalty,
+terminal survival signal, SOFA-biased start distribution and the three
+Configuration~B failure modes before choosing algorithms. \\
+Implement classical RL in Config~A &
+We use Policy Iteration because the full model is exposed, and Q-Learning/SARSA as
+model-free TD comparators on the same discrete MDP. \\
+Move to continuous clinical RL in Config~B &
+We keep the same 25 treatment actions but replace the tabular state with a
+47-feature clinical observation, requiring DQN, PPO and A2C with observation
+normalisation and careful evaluation under corrupted observations. \\
+Go beyond the baseline &
+We add reward shaping, learning from demonstrations, robustness analysis,
+interpretability, overestimation diagnostics and an intensity--survival Pareto
+reading, all evaluated on the original unshaped environment. \\
+\bottomrule
+\end{tabularx}
+\caption{Traceability from the project brief to the report contributions.}
+\label{tab:brief_trace}
+\end{table}
+
+This traceability is important for the final interpretation. A high return alone
+is not enough: because the reward contains both survival and an accumulated
+treatment penalty, a policy can improve return by treating less without saving
+more patients. For that reason, every result below separates \emph{survival},
+\emph{return} and \emph{treatment intensity}, and the clinical conclusion is based
+on the three together rather than on a single scalar score.
+
 
 % ============================================================
 \section{Methodology}
+
+\subsection{Design principles}
+Our methodological choices follow directly from the environment exploration in
+the starter notebooks. First, we treat Configuration~A and Configuration~B as
+different observation regimes over the same clinical decision idea, not as two
+unrelated tasks. Both use the same 25 treatment actions and the same survival
+objective, so differences in performance can be interpreted as differences caused
+by model access, observation representation and deployment noise.
+
+Second, we always decompose the reward into its two clinical components. The
+terminal survival reward is the primary medical outcome; the per-step
+$\lambda\mathrm{INT}(a)$ term is a parsimony regulariser that discourages
+unnecessarily aggressive dosing. Optimising the summed return without reporting
+survival and intensity separately would hide whether an agent is genuinely
+improving outcomes or simply exploiting the dense penalty. This is especially
+important in Configuration~B, where the survival signal is sparse and noisy.
+
+Third, we use the strongest method that is justified by the information available.
+In Configuration~A the transition and reward tensors are known, so an exact
+dynamic-programming solution is not only allowed but expected. In
+Configuration~B the agent receives only continuous clinical observations and
+sampled transitions, so the right comparison is between deep value-based and
+actor-critic methods. This prevents an unfair comparison in which a planning
+algorithm is used in a setting where the model is unavailable.
 
 \subsection{Configuration~A: tabular algorithms}
 We implement the three tabular methods taught in the dynamic-programming and
@@ -218,11 +279,21 @@ temporal-difference lectures \cite{sutton2018}.
 \textbf{Policy Iteration (model-based).} Alternates policy evaluation,
 $V(s)\leftarrow\sum_{s'}P(s'\mid s,\pi(s))[R+\gamma V(s')]$, with greedy policy
 improvement until the policy is stable. With $P$ and $R$ available it solves the
-Bellman optimality equations exactly and serves as the model-based ceiling.
+Bellman optimality equations exactly and serves as the model-based ceiling. The
+policy-evaluation tolerance is set tightly ($\theta=10^{-9}$ in the final run) so
+that any difference between Policy Iteration and the learning agents is due to
+sample-based learning rather than numerical looseness. Terminal states are treated
+as absorbing, so the value of survival/death propagates backward through the
+patient trajectory.
 
 \textbf{Q-Learning (off-policy TD).}
 $Q(s,a)\leftarrow Q(s,a)+\alpha[r+\gamma\max_{a'}Q(s',a')-Q(s,a)]$, learning the
-greedy target policy from $\varepsilon$-greedy behaviour.
+greedy target policy from $\varepsilon$-greedy behaviour. It is included because it
+is the canonical model-free route to the optimal action-value function when the
+agent must learn from interaction. In this sparse-reward sepsis task, the max
+target is also a useful stress test: if the sampled values are noisy, Q-Learning
+can become overconfident in actions that happened to lead to survival in early
+episodes.
 
 \textbf{SARSA (on-policy TD).}
 $Q(s,a)\leftarrow Q(s,a)+\alpha[r+\gamma Q(s',a')-Q(s,a)]$, bootstrapping through
@@ -230,7 +301,12 @@ the action actually taken, hence more conservative under exploration. Because th
 reward is sparse and the cohort difficult, both model-free agents use
 \emph{optimistic initialisation} ($Q_0=1$, the maximum achievable return) to drive
 systematic exploration, trained for $50{,}000$ episodes with $\varepsilon$ annealed
-from $1.0$ to $0.01$.
+from $1.0$ to $0.01$ over $35{,}000$ episodes ($\alpha=0.1$). The slower annealing
+was chosen after the initial notebook run showed that short exploration budgets
+leave many clinically relevant state--action pairs under-sampled. SARSA is
+therefore not expected to beat Policy Iteration; its role is to show how an
+on-policy learner behaves when the behaviour policy itself is exploratory and
+clinically costly.
 
 \subsection{Configuration~B: deep reinforcement learning}
 The continuous observation and discrete action space lead naturally to the
@@ -247,6 +323,24 @@ ablation against PPO. Each agent is trained both on raw observations (v1) and wi
 very different scales, normalisation is the single largest lever, so v2 is used for
 all main results.
 
+The three algorithms cover complementary assumptions. DQN is sample efficient and
+well matched to a discrete action space, but it learns a value for every action and
+is exposed to overestimation through the max operator. PPO optimises the policy
+directly and limits destructive updates through clipping, which is attractive in a
+noisy clinical simulator where large policy jumps can collapse performance. A2C is
+included as the simpler actor-critic baseline: if PPO only improves because of the
+clipped objective, A2C should reveal that; if A2C performs similarly, then the
+dominant issue is likely representation/reward rather than the policy-gradient
+stabiliser.
+
+The final report run uses $1$M timesteps, the best short-budget Optuna parameters,
+and SOFA potential-based reward shaping during training. These are training
+interventions only. At evaluation time we reload the learned policy and run it on
+the default \texttt{make\_clinical\_env()} reward, without shaping and without
+changing failure-mode probabilities. This separation is deliberate: shaping is
+allowed to make learning easier, but the reported survival rate must remain the
+survival rate on the original project environment.
+
 \subsection{Evaluation protocol}
 \label{sec:eval}
 All reported numbers use a \emph{fixed} evaluation protocol: a held-out list of
@@ -259,6 +353,14 @@ interval. For Configuration~B we additionally bucket each episode by failure mod
 all policies on the \emph{same} patients. We evaluate by Monte-Carlo rollout in the
 simulator, which sidesteps the off-policy-evaluation difficulties that
 \cite{gottesman2019} identify as the central weakness of clinical RL on logged data.
+
+The evaluation is intentionally deterministic even for stochastic training
+algorithms. During training, exploration and stochastic gradient updates are
+necessary; during evaluation, however, the question is what treatment policy would
+be deployed for a given patient state. We therefore use greedy DQN actions and the
+deterministic action mode for PPO/A2C. The same seed list is shared across random,
+expert, imitation and learned policies, so per-policy differences are not caused by
+seeing easier or harder patients.
 
 
 % ============================================================
@@ -293,6 +395,49 @@ The random baseline (uniformly random actions) is the performance floor that eve
 trained policy must beat. As a clinically grounded upper reference we also evaluate
 the benchmark's \emph{expert} policy --- the AI~Clinician behaviour policy
 \cite{komorowski2018} --- under the same protocol.
+
+The result files are generated in a one-way pipeline. Configuration~A writes
+\texttt{configA\_results.json}; the Configuration~B notebook and report scripts
+then read that file for the cross-configuration comparison, avoiding hand-copied
+numbers. The $1$M deep-RL run writes \texttt{configB\_1m\_results.json} and
+\texttt{configB\_1m\_compare\_configs.csv}; the multi-seed and overestimation
+checks write separate JSON files. This is a small but important reproducibility
+choice: tables in the report are traceable to committed outputs rather than to
+manually edited notebook cells.
+
+Table~\ref{tab:metrics} defines the four metrics used throughout. We keep all four
+because each answers a different question. Survival answers the clinical question,
+return answers the formal RL objective, intensity answers whether the policy is
+parsimonious, and failure-mode survival answers whether the policy is robust to
+the specific deployment problems introduced by the brief.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.22\textwidth}X}
+\toprule
+\tH{Metric} & \tH{Reason for reporting it} \\
+\gmid
+Survival rate & Primary clinical outcome; computed from terminal survival/death,
+not from the penalised accumulated return. \\
+Mean return & The actual RL optimisation objective, including the terminal reward
+and the treatment-intensity penalty. \\
+Mean intensity & Average normalised vasopressor/fluid dose; reveals whether a
+policy is clinically parsimonious or simply avoids treatment. \\
+Failure-mode buckets & Clean, noisy, missing-lab and acute episodes isolate which
+deployment perturbation is responsible for degradation. \\
+\bottomrule
+\end{tabularx}
+\caption{Evaluation metrics and why each is necessary.}
+\label{tab:metrics}
+\end{table}
+
+For the deep agents, the preview runs are used only for diagnosis and figure
+generation during development. The headline table uses the report-quality run:
+$1$M timesteps, observation normalisation, tuned hyperparameters and training-only
+SOFA shaping. The Optuna search is deliberately treated as a proxy search rather
+than a definitive global optimum, because each trial uses only $50$k steps; it
+finds sensible learning-rate and entropy/update settings, but the final claims
+come from the longer retraining and the fixed evaluation protocol.
 
 
 % ============================================================
@@ -333,6 +478,33 @@ which is precisely the premise of Configuration~B. Convergence curves, the
 survival/intensity bar charts and the per-policy action distributions are given in
 Appendix figures \ref{fig:a_learning}--\ref{fig:a_actions}.
 
+The difference between SARSA and Q-Learning is also clinically interpretable.
+Q-Learning evaluates the greedy policy even while the behaviour policy is still
+exploring, so its update can assign high value to actions that would not be taken
+consistently during training. SARSA instead learns the value of the exploratory
+policy it actually follows; under a treatment-penalty reward this tends to be more
+conservative. That pattern appears in the final metrics: SARSA has slightly higher
+survival than Q-Learning and lower intensity, although both remain far from the
+planning optimum.
+
+The environment-exploration plots support this reading. Random rollouts visit a
+limited subset of the 714 clinical states, and most intermediate transitions carry
+no reward signal. Therefore a model-free learner sees long stretches of
+uninformative feedback and must infer which early treatments contributed to a
+terminal survival event many steps later. Policy Iteration does not suffer from
+this credit-assignment bottleneck because it sweeps over the known transition
+model and backs up the terminal reward through every state in the MDP. This is why
+Configuration~A is best interpreted as a demonstration of the value of model
+access, not merely as a contest between three implementations.
+
+The warm-start extension in Section~\ref{sec:ext} reinforces the same point from a
+different angle. When the Q-table starts from zero, early sampled returns are too
+weak to move the policy far from the random plateau. When the same learner starts
+from expert Monte-Carlo returns, it inherits useful clinical structure and learns
+faster. This does not make the warm-started Q-Learner optimal, but it shows that
+prior clinical behaviour can reduce the exploration burden imposed by sparse
+terminal rewards.
+
 
 % ============================================================
 \section{Results: Configuration~B}
@@ -371,6 +543,23 @@ least as good as the AI~Clinician, while on the full clinical distribution they 
 limited by the same irreducible mortality. Learning curves and the per-condition
 robustness bars are in Appendix figures \ref{fig:b_curves}--\ref{fig:b_robust}.
 
+The return column should not be read as a pure survival ranking. A2C has the best
+mean return ($0.626$) despite the lowest survival among the learned deep agents,
+because it also has by far the lowest intensity ($0.149$). In other words, A2C
+learns an economical treatment style that the formal reward likes, but this does
+not translate into the strongest survival. DQN is the preferred survival policy;
+A2C is the preferred parsimony policy; PPO sits between them. This is why the
+Pareto plot is more informative than a single leaderboard.
+
+The expert comparison is intentionally cautious. The AI~Clinician policy is a
+clinically meaningful reference, but it is not a strict oracle in Configuration~B:
+our agents act from corrupted continuous observations, whereas the benchmark
+expert is derived from the underlying clinician behaviour. Matching it on overall
+survival and exceeding it on clean episodes is therefore a useful result, but not a
+claim of clinical superiority. The correct interpretation is that the learned
+policies recover expert-level behaviour in the simulator under the evaluation
+protocol.
+
 \subsection{Robustness to failure modes}
 Bucketing by failure mode (Appendix Fig.~\ref{fig:b_robust}) shows that
 \emph{missing} laboratory values are the most damaging perturbation (random
@@ -379,6 +568,22 @@ observation \emph{noise} ($53.9\%$ vs $74.6\%$ clean), and that DQN degrades mos
 gracefully. Acute events are irreducible: $0\%$ survival for every policy including
 the expert, confirming that part of the overall-survival gap to Configuration~A is
 structural rather than a modelling failure.
+
+This decomposition is one of the most useful parts of the experiment. If we only
+reported the All column, Configuration~B would look like a small improvement over
+random. The bucketed view shows a more precise story: clean episodes can be
+treated well; missing values and noisy monitors change the information available
+to the policy; and acute deterioration is outside the action's causal control. The
+learned agent is therefore not failing uniformly. It is limited in exactly the
+ways the brief designed Configuration~B to test.
+
+The failure-mode analysis also explains why observation normalisation is not a
+cosmetic preprocessing step. The 47 clinical variables mix bounded scores,
+laboratory measurements and physiological quantities with different magnitudes.
+Without normalisation, the neural networks can over-weight features because of
+scale rather than clinical relevance. With \texttt{VecNormalize}, DQN/PPO/A2C see a
+more numerically stable input distribution, making the comparison between failure
+modes more about missing/noisy information and less about raw feature scale.
 
 \subsection{Across-seed reliability}
 A single training seed can be lucky or unlucky \cite{henderson2018}, so we retrain
@@ -389,13 +594,24 @@ shows the headline result is not a single-seed artefact. The two agents are
 statistically indistinguishable on overall survival, so we do \emph{not} claim one
 dominates the other (Appendix Fig.~\ref{fig:b_multiseed}).
 
+The multi-seed result is deliberately lower-budget than the headline $1$M run, so
+it is not used to replace Table~\ref{tab:configB}. Its purpose is variance
+calibration: if the same algorithm changed by five or ten survival points across
+seeds, the $1$M result would be suspect. Instead, both DQN and PPO remain within a
+narrow band. This makes the modest expert-matching result credible even though the
+confidence intervals in the $1{,}000$-episode evaluation overlap.
+
 
 % ============================================================
 \section{Creative Extensions}
 \label{sec:ext}
 
 Our extension is a coherent \emph{clinical reliability and interpretability} suite
-built on the existing environment, organised into four themes.
+built on the existing environment, organised into four themes. The goal is not to
+add arbitrary complexity, but to answer a practical clinical-RL question: if a
+policy appears to work, can we explain \emph{why}, can we see when it fails, and
+can we tell whether it is improving survival rather than merely exploiting the
+reward penalty?
 
 \subsection{Reward design: SOFA potential-based shaping}
 Under the sparse reward the agents optimise the \emph{easy} part of the return ---
@@ -407,6 +623,16 @@ leaves the optimal policy unchanged; it is applied at \emph{training} time only,
 while evaluation always uses the true reward. Shaping is what lifts the agents from
 near-random survival to the expert-matching results in Table~\ref{tab:configB}:
 without it, the deep agents sit at the random survival rate and merely treat less.
+
+SOFA is a clinically natural potential because it summarises organ dysfunction,
+and reducing organ failure is a plausible intermediate sign that the eventual
+survival outcome is becoming more likely. The shaping term therefore gives the
+learner a denser training signal without changing the evaluation target. In
+practice, we use $\beta=0.05$ in the final run: large enough to reward meaningful
+SOFA improvements, but small enough that the terminal survival outcome remains the
+dominant objective. This design directly addresses the main weakness observed in
+the unshaped runs: sparse terminal rewards leave the gradient dominated by the
+treatment-penalty term.
 
 \subsection{Learning from demonstrations}
 We implement demonstration learning in both the imitation and the warm-start sense,
@@ -420,6 +646,15 @@ $0.28$ vs $0.31$); on the full clinical distribution it loses $\sim2$ points,
 because it must act on the \emph{corrupted} observation while the expert sees the
 true state --- a clean illustration of the cost of observation degradation.
 
+BC is included for two reasons. First, it is a sanity check that the observation
+vector contains enough information to recover a meaningful treatment pattern from
+expert behaviour. Second, it separates imitation from reinforcement learning:
+where BC does well, the expert policy is learnable from observations; where BC
+fails, the problem is not only optimisation but also distribution shift under
+noise/missingness. Its full-distribution survival is below the expert, which is
+exactly what we would expect when a supervised policy is forced to generalise to
+corrupted observations.
+
 \textbf{Expert warm-start (Config~A).} The tabular $Q$-table is seeded from expert
 demonstrations via Monte-Carlo returns, then refined by Q-Learning. The cold agent
 (zero initialisation) stalls near the random plateau and never reaches $70\%$
@@ -428,6 +663,12 @@ escapes the plateau, reaching $70\%$ by $\sim9$k episodes and ending at
 $\mathbf{71.9\%}$ with a markedly more parsimonious policy (intensity $0.345$),
 inheriting the expert's economical treatment style
 (Appendix Fig.~\ref{fig:a_warmstart}).
+
+This tabular demonstration experiment is intentionally simple: it does not change
+the algorithm, the environment or the evaluation seeds. Only the initial Q-values
+change. The gain therefore isolates the value of prior clinical structure. In a
+sparse-reward medical task, demonstrations do not replace RL, but they provide a
+better starting point for exploration.
 
 \subsection{Interpretability}
 We explain the DQN with two complementary methods. Permutation importance measures
@@ -440,6 +681,15 @@ strongly correlated feature set, single-feature permutation produces off-manifol
 inputs and can mis-state importance \cite{hooker2021}; the agreement with SHAP
 strengthens the reading (Appendix Fig.~\ref{fig:b_feat}).
 
+The interpretability analysis is not presented as proof that the policy is safe.
+It is a diagnostic check. A policy whose decisions were driven by arbitrary
+feature indices or observation-scale artefacts would be suspicious even if its
+survival metric looked acceptable. Seeing clinically plausible markers among the
+largest contributors gives confidence that the network is at least using the same
+type of severity information that clinicians would monitor. The correlated-feature
+caveat remains essential: ICU variables move together, so importance should be
+read as a qualitative explanation rather than a causal attribution.
+
 \subsection{Q-value overestimation diagnostic}
 Q-Learning with a max operator on approximate values is known to overestimate
 \cite{vanhasselt2016}. Comparing the DQN's predicted value of the greedy action
@@ -450,8 +700,8 @@ overestimation discussed in the value-based lecture and the standard motivation 
 Double DQN, listed as future work (Appendix Fig.~\ref{fig:b_overest}).
 
 \subsection{Treatment intensity versus survival}
-The intensity--survival Pareto plot (title figure and Fig.~\ref{fig:pareto})
-summarises the whole project clinically. Policy Iteration dominates ($78.8\%$
+The intensity--survival Pareto plot on the title page summarises the whole project
+clinically. Policy Iteration dominates ($78.8\%$
 survival at intensity $0.16$); the random policy is dominated by every learned
 policy (it treats more and survives less); and within Configuration~B there is a
 clear trade-off --- A2C is the most parsimonious ($0.15$), DQN the most effective
@@ -496,6 +746,23 @@ a clinician baseline, uncertainty quantification, multiple seeds
 \cite{henderson2018}, and in-simulator evaluation that avoids off-policy estimation
 on logged data.
 
+\textbf{Configuration~A versus Configuration~B.} The cross-configuration comparison
+should not be read as ``deep RL is worse than tabular RL'' in general. It shows
+what changes when the problem becomes more realistic. Configuration~A exposes the
+full MDP and gives an integer state, so the best method is exact planning.
+Configuration~B hides the model, replaces the state id with a high-dimensional
+clinical vector, and injects observation failures. The lower survival is therefore
+not surprising; it is the cost of moving from a clean known-MDP classroom setting
+to a deployment-style setting.
+
+\textbf{Clinical reading.} The best learned policies are useful because they are
+not uniformly more aggressive. DQN improves survival with moderate intensity;
+A2C achieves high return mostly through very low intensity; Policy Iteration shows
+that the optimal tabular policy can be both effective and parsimonious when the
+model is known. This is the right clinical framing: an RL policy for sepsis is not
+valuable merely because it recommends treatment, but because it balances outcome
+and treatment burden under uncertainty.
+
 
 % ============================================================
 \section{Limitations and Future Work}
@@ -511,6 +778,16 @@ measured $+0.194$ overestimation and improves survival; (ii) a \textbf{distribut
 agent (QR-DQN) as a fourth deep method; (iii) a $\beta$ sweep of the SOFA shaping to
 trace its sensitivity. Finally, all results are on a \emph{simulated} benchmark and
 are \textbf{not} clinical advice.
+
+Two additional limitations are worth stating explicitly. First, the simulator is
+derived from observational data, so its transitions inherit modelling assumptions
+from the ICU-Sepsis/AI~Clinician pipeline; policy performance in the simulator is
+not evidence of bedside efficacy. Second, the failure-mode wrappers are useful
+stress tests but simplified versions of real data quality problems. Real ICU
+missingness is often informative, correlated with workflow and patient severity,
+and not necessarily well represented by zeroing a fixed subset of features. These
+limitations do not invalidate the benchmark result, but they define the boundary
+between a course project and a deployable clinical system.
 
 
 % ============================================================
@@ -575,115 +852,99 @@ Deep Reinforcement Learning Approach}, Machine Learning for Healthcare (MLHC), 2
 % ============================================================
 \newpage
 \appendix
-\section{Appendix: Figures}
+\section{Appendix: Compact Figure Reference}
 
 All figures are reproducible from the committed result files and the \texttt{run\_*.py}
-scripts in the repository.
+scripts in the repository. They are shown compactly here so the page budget is
+spent mainly on methodology and interpretation.
+
+\begingroup
+\captionsetup{font=footnotesize,skip=2pt}
 
 \subsection{Configuration~A}
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\textwidth]{configA_env_exploration.png}
-\caption{Configuration~A environment exploration: state-visitation under a random
-policy (left) and reward sparsity --- only terminal transitions carry reward (right).}
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configA_env_exploration.png}
+\caption{Config~A environment exploration.}
 \label{fig:a_env}
-\end{figure}
-
-\begin{figure}[H]
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.92\textwidth]{configA_learning_curves.png}
-\caption{Configuration~A learning curves (greedy-policy evaluation during training):
-mean return and survival for Q-Learning and SARSA, with the random and Policy
-Iteration reference lines.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configA_learning_curves.png}
+\caption{Config~A learning curves.}
 \label{fig:a_learning}
-\end{figure}
+\end{minipage}
 
-\begin{figure}[H]
+\vspace{4pt}
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.92\textwidth]{configA_survival_intensity.png}
-\caption{Configuration~A survival rate and mean treatment intensity per algorithm.
-Policy Iteration achieves the highest survival at the lowest intensity.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configA_survival_intensity.png}
+\caption{Config~A survival and intensity.}
 \label{fig:a_survint}
-\end{figure}
-
-\begin{figure}[H]
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.92\textwidth]{configA_action_distribution.png}
-\caption{Action distribution over clinical states per Configuration~A policy
-(vasopressor level $\times$ IV-fluid level).}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configA_action_distribution.png}
+\caption{Config~A action distributions.}
 \label{fig:a_actions}
-\end{figure}
+\end{minipage}
 
-\begin{figure}[H]
+\vspace{4pt}
+\begin{minipage}{0.62\textwidth}
 \centering
-\includegraphics[width=0.78\textwidth]{configA_warmstart.png}
-\caption{Learning-from-demonstrations warm-start (\S\ref{sec:ext}). The cold agent
-stalls near the random plateau; the expert-warm-started agent escapes it, reaching
-$70\%$ survival by $\sim9$k episodes and a more parsimonious final policy.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configA_warmstart.png}
+\caption{Expert warm-start versus cold Q-Learning.}
 \label{fig:a_warmstart}
+\end{minipage}
 \end{figure}
 
 \subsection{Configuration~B}
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.95\textwidth]{configB_1m_learning_curves.png}
-\caption{Configuration~B learning curves ($1$M steps, EMA-smoothed evaluation
-return) for DQN, PPO and A2C, with the random baseline.}
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_1m_learning_curves.png}
+\caption{Config~B $1$M learning curves.}
 \label{fig:b_curves}
-\end{figure}
-
-\begin{figure}[H]
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.95\textwidth]{configB_1m_robustness_survival.png}
-\caption{Configuration~B survival per failure mode (Clean / Noisy / Missing /
-Acute) for each policy, against the bucketed random baseline. Missing labs are the
-most damaging perturbation; acute events give $0\%$ survival for all policies.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_1m_robustness_survival.png}
+\caption{Config~B survival by failure mode.}
 \label{fig:b_robust}
-\end{figure}
+\end{minipage}
 
-\begin{figure}[H]
+\vspace{4pt}
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.92\textwidth]{configB_multiseed.png}
-\caption{Across-seed reliability (three seeds, $300$k steps). Error bars are the
-standard deviation across training seeds; DQN and PPO are stable and statistically
-indistinguishable on overall survival.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_multiseed.png}
+\caption{Across-seed reliability.}
 \label{fig:b_multiseed}
-\end{figure}
-
-\begin{figure}[H]
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.92\textwidth]{configB_1m_dose_grid.png}
-\caption{Learned dose distribution ($5\times5$ vasopressor $\times$ IV-fluid grid)
-per agent --- the clinical reading of each policy's treatment philosophy.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_1m_dose_grid.png}
+\caption{Learned vasopressor/fluid dose grids.}
 \label{fig:b_dose}
-\end{figure}
+\end{minipage}
 
-\begin{figure}[H]
+\vspace{4pt}
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.88\textwidth]{configB_1m_feature_importance.png}
-\caption{DQN permutation feature importance. Established sepsis-severity markers
-(red) rank among the most decision-relevant features; reported with the
-correlated-feature caveat of \cite{hooker2021} and cross-checked with SHAP.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_1m_feature_importance.png}
+\caption{DQN feature importance.}
 \label{fig:b_feat}
-\end{figure}
-
-\begin{figure}[H]
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=0.62\textwidth]{configB_overestimation.png}
-\caption{DQN value calibration: predicted greedy-action value versus realised
-Monte-Carlo return. The systematic offset above the diagonal (mean bias $+0.194$)
-is the overestimation discussed in the value-based lecture.}
+\includegraphics[width=\linewidth,height=0.18\textheight,keepaspectratio]{configB_overestimation.png}
+\caption{DQN value overestimation diagnostic.}
 \label{fig:b_overest}
+\end{minipage}
 \end{figure}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.92\textwidth]{configAB_pareto.png}
-\caption{Treatment intensity versus survival for every policy in both
-configurations --- the $\lambda$ trade-off. Triangles: Configuration~A (discrete
-MDP); circles: Configuration~B (clinical env). Random is dominated by every learned
-policy; Policy Iteration dominates overall.}
-\label{fig:pareto}
-\end{figure}
+\endgroup
 
 \end{document}
