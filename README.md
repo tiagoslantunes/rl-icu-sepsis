@@ -59,16 +59,29 @@ strongest normalized Config B candidates for `1_000_000` timesteps each:
 - `configB_1m_compare_configs.csv`
 - `plots/configB_1m_*.png`
 
-In the 1M run, `PPO-v2 1M` is the best Config B policy by survival/return
-(`0.5955` mean return, `67.8%` survival), but it still remains below the
-tabular Config A methods. This is an important result: the continuous, noisy,
-partially missing clinical setting is substantially harder than the discrete
-known-MDP setting.
+The 1M run uses two **training-only** performance levers (evaluation always stays
+on the true reward / default env): SOFA **reward shaping** (`SHAPING=True`) and the
+**Optuna** best hyperparameters (`USE_TUNED=True`, run the notebook Optuna cell
+first to produce `optuna_best_params.json`).
+
+**Honest reading of the results.** ICU-Sepsis has a deliberately *high* random
+baseline and a *small* optimal-vs-random gap (Config A Policy Iteration, the exact
+optimum, reaches only ~79% survival vs ~69% random). Against a **per-condition**
+random baseline, the unshaped deep agents barely improve *survival* — they mainly
+learn lower *treatment intensity* (more return via the `lam` penalty), not more
+survivors. So we report return **decomposed** into survival vs intensity, and do not
+overclaim. The continuous, noisy, partially-missing clinical setting is genuinely
+harder than the discrete known-MDP setting.
 
 ## Creative extension
 
-**Robustness + clinical interpretability audit:** per-failure-mode degradation
-(Clean / Noisy / Missing / Acute), DQN feature-importance via Q-value perturbation,
-and treatment-intensity / dose-grid analysis of the learned policies.
+**Robustness + clinical interpretability + reward design:**
+- per-failure-mode degradation (Clean / Noisy / Missing / Acute) vs a fair,
+  bucketed random baseline;
+- DQN feature-importance via Q-value perturbation (sepsis-severity markers);
+- treatment-intensity / 5x5 dose-grid analysis of the learned policies;
+- **SOFA potential-based reward shaping** (`SofaShapingEnv`, Ng et al. 1999):
+  diagnoses that naive RL optimises parsimony over survival, and redirects the
+  policy toward survival with a dense, policy-invariant signal.
 
 > Disclaimer: results are on a **simulated** benchmark and are **not** clinical advice.

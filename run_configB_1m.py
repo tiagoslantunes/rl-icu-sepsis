@@ -14,6 +14,16 @@ TIMESTEPS = 1_000_000
 EVAL_FREQ = 50_000
 N_EVAL_TRAIN = 100
 N_EVAL_FINAL = 1000
+
+# Performance levers (both are TRAINING-only; evaluation stays on the true reward
+# and the default make_clinical_env, so the brief's required env is unchanged):
+#   SHAPING   - SOFA potential-based reward shaping -> dense survival signal
+#   USE_TUNED - use the Optuna best params (run the notebook Optuna cell first to
+#               produce optuna_best_params.json; otherwise falls back to DEFAULT_HP)
+SHAPING = True
+SHAPING_BETA = 0.05
+USE_TUNED = True
+
 RUNS = [
     ("DQN", "dqn_v2_1m", "DQN-v2 1M"),
     ("PPO", "ppo_v2_1m", "PPO-v2 1M"),
@@ -27,16 +37,25 @@ summary = {"metadata": {
     "eval_freq": EVAL_FREQ,
     "n_eval_train": N_EVAL_TRAIN,
     "n_eval_final": N_EVAL_FINAL,
+    "shaping": SHAPING,
+    "shaping_beta": SHAPING_BETA,
+    "use_tuned": USE_TUNED,
     "started_at": datetime.now().isoformat(timespec="seconds"),
 }}
 results = {}
 tags_labels = {}
 
-random_stats = srl.random_baseline(n_episodes=N_EVAL_FINAL)
-summary["random"] = random_stats
+# FAIR baseline: bucketed by failure mode, same seed scheme as the agents.
+print("=== RANDOM BASELINE (bucketed) ===", flush=True)
+random_buckets = srl.random_baseline_by_condition(n_episodes=N_EVAL_FINAL)
+random_stats = {"return": random_buckets["All"]["return"],
+                "survival": random_buckets["All"]["survival"]}
+results["Random"] = random_buckets          # shows as a group in the comparison plots
+summary["random"] = random_buckets
 
 for algo, tag, label in RUNS:
-    print(f"\n=== TRAIN {label} ({TIMESTEPS:,} steps) @ {datetime.now().isoformat(timespec='seconds')} ===", flush=True)
+    print(f"\n=== TRAIN {label} ({TIMESTEPS:,} steps, shaping={SHAPING}, tuned={USE_TUNED}) @ {datetime.now().isoformat(timespec='seconds')} ===", flush=True)
+    tuned_hp = srl.load_tuned_hp(algo) if USE_TUNED else None
     srl.train_agent(
         algo,
         timesteps=TIMESTEPS,
@@ -46,8 +65,11 @@ for algo, tag, label in RUNS:
         n_eval_episodes=N_EVAL_TRAIN,
         progress_bar=False,
         verbose=0,
+        shaping=SHAPING,
+        shaping_beta=SHAPING_BETA,
+        hyperparams=tuned_hp,
     )
-    print(f"=== EVALUATE {label} ===", flush=True)
+    print(f"=== EVALUATE {label} (true reward, default env) ===", flush=True)
     res = srl.evaluate_conditions(tag, algo, n_episodes=N_EVAL_FINAL)
     results[label] = res
     tags_labels[tag] = label

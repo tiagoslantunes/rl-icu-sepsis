@@ -33,7 +33,7 @@ from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from envs.wrappers import make_clinical_env
+from envs.wrappers import make_clinical_env, SofaShapingEnv
 from envs.env_setup import INTENSITY, N_ACTIONS
 
 # --------------------------------------------------------------------------- #
@@ -121,31 +121,45 @@ def train_agent(
     n_eval_episodes: int = 50,
     verbose: int = 0,
     progress_bar: bool = True,
+    shaping: bool = False,
+    shaping_beta: float = 0.05,
 ) -> Tuple[object, str]:
     """Train one agent; save best model (+ VecNormalize stats + eval log).
 
     Returns ``(model, tag)``. ``tag`` is the sub-directory name used under
     ``models/`` and ``logs/`` and identifies the run in later plots.
+
+    If ``shaping`` is True, the TRAINING env gets SOFA potential-based reward
+    shaping (dense signal toward survival). The EvalCallback env and all reported
+    evaluation stay on the unshaped `make_clinical_env()` (true reward), so the
+    brief's required environment is never altered for results.
     """
     if algo not in ALGOS:
         raise ValueError(f"Unknown algo {algo!r}; choose from {list(ALGOS)}")
     set_seed(seed)
     cls = ALGOS[algo]
-    tag = tag or f"{algo.lower()}{'_v2' if normalize else ''}"
+    tag = tag or f"{algo.lower()}{'_v2' if normalize else ''}{'_shaped' if shaping else ''}"
     model_dir = os.path.join(MODELS_DIR, tag)
     log_dir = os.path.join(LOGS_DIR, tag)
     ensure_dirs(model_dir, log_dir)
 
     hp = {**DEFAULT_HP[algo], **(hyperparams or {})}
 
+    # Training env optionally carries reward shaping; eval env never does.
+    def _train_factory():
+        e = make_clinical_env()
+        if shaping:
+            e = SofaShapingEnv(e, beta=shaping_beta)
+        return Monitor(e)
+
     if normalize:
-        train_env = VecNormalize(DummyVecEnv([_monitored_env]),
+        train_env = VecNormalize(DummyVecEnv([_train_factory]),
                                  norm_obs=True, norm_reward=False, clip_obs=10.0)
         eval_env = VecNormalize(DummyVecEnv([_monitored_env]),
                                 norm_obs=True, norm_reward=False, clip_obs=10.0,
                                 training=False)
     else:
-        train_env = DummyVecEnv([_monitored_env])
+        train_env = DummyVecEnv([_train_factory])
         eval_env = DummyVecEnv([_monitored_env])
 
     model = cls("MlpPolicy", train_env, seed=seed, device=DEVICE,
@@ -296,6 +310,68 @@ def random_baseline(n_episodes: int = 1000, seed: int = SEED) -> Dict[str, float
     out = {"return": float(np.mean(returns)), "survival": float(np.mean(survivals))}
     print(f"[random] return={out['return']:.4f}  survival={out['survival']:.1%}")
     return out
+
+
+def random_baseline_by_condition(n_episodes: int = 1000, seed_offset: int = 20_000):
+    """Random-policy baseline bucketed by failure mode, in the SAME schema as
+    ``evaluate_conditions`` (so it can be dropped straight into the comparison
+    plots/tables). Uses the SAME seed scheme as the agents -> a FAIR per-condition
+    baseline, which the plain `random_baseline` (overall only) cannot provide.
+    """
+    raw = {b: {"ret": [], "surv": [], "intens": []} for b in BUCKETS}
+    action_counts = np.zeros(N_ACTIONS, dtype=np.int64)
+    env = make_clinical_env()
+    for ep in range(n_episodes):
+        obs, info = env.reset(seed=seed_offset + ep)
+        ep_noisy = bool(info.get("noisy_episode", False))
+        ep_missing = info.get("missing_features") is not None
+        ep_acute = False
+        done, ep_ret, last_r = False, 0.0, 0.0
+        ep_intens, ep_steps = 0.0, 0
+        while not done:
+            a = env.action_space.sample()
+            obs, reward, terminated, truncated, info = env.step(a)
+            done = terminated or truncated
+            ep_ret += reward; last_r = reward
+            ep_intens += INTENSITY[a]; ep_steps += 1; action_counts[a] += 1
+            if info.get("acute_event", False):
+                ep_acute = True
+        surv = 1.0 if last_r > 0.5 else 0.0
+        intens = ep_intens / max(ep_steps, 1)
+        hit = ["All"]
+        if not ep_noisy and not ep_missing and not ep_acute: hit.append("Clean")
+        if ep_noisy: hit.append("Noisy")
+        if ep_missing: hit.append("Missing")
+        if ep_acute: hit.append("Acute")
+        for b in hit:
+            raw[b]["ret"].append(ep_ret); raw[b]["surv"].append(surv); raw[b]["intens"].append(intens)
+    env.close()
+    results = {}
+    for b in BUCKETS:
+        if raw[b]["ret"]:
+            results[b] = {"return": float(np.mean(raw[b]["ret"])),
+                          "survival": float(np.mean(raw[b]["surv"])),
+                          "intensity": float(np.mean(raw[b]["intens"]))}
+            print(f"[random] {b:8s} n={len(raw[b]['ret']):4d}  "
+                  f"return={results[b]['return']:.4f}  survival={results[b]['survival']:.1%}")
+    results["__actions__"] = action_counts.tolist()
+    return results
+
+
+def load_tuned_hp(algo: str, path: str = "optuna_best_params.json") -> dict:
+    """Return the best Optuna hyperparameters for ``algo`` from disk, or {} if the
+    file/key is absent. Lets the long run actually USE the tuning results instead
+    of training on DEFAULT_HP (connects the Optuna section to the final results).
+    """
+    if not os.path.exists(path):
+        print(f"  ({path} not found - using DEFAULT_HP for {algo})")
+        return {}
+    import json
+    with open(path) as f:
+        best = json.load(f)
+    hp = best.get(algo, {})
+    print(f"  [tuned] {algo}: {hp}" if hp else f"  (no tuned params for {algo} in {path})")
+    return dict(hp)
 
 
 # --------------------------------------------------------------------------- #

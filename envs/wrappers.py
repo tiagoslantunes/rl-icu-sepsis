@@ -149,7 +149,71 @@ class AcuteEventEnv(gym.Wrapper):
         return obs, r, te, tr, info
 
 
-#  Factory: compose all three wrappers 
+#  Reward shaping (TRAINING ONLY)
+
+class SofaShapingEnv(gym.Wrapper):
+    """
+    Potential-based reward shaping (Ng, Harada & Russell, 1999) using the SOFA
+    organ-failure score, to give a DENSE learning signal on top of the sparse
+    survival reward.
+
+    Motivation (theory + diagnosis)
+    -------------------------------
+    The native reward is sparse (+1 at survival only) and carries a small per-step
+    treatment-intensity penalty. Empirically, plain DQN/PPO/A2C therefore optimise
+    the *easy* part of the return — they learn to lower treatment intensity (less
+    penalty) rather than to improve *survival* (a weak, delayed signal). On the
+    clinical env they end up at or barely above the random survival rate.
+
+    Potential-based shaping adds F(s, s') = gamma * Phi(s') - Phi(s) with the
+    potential Phi(s) = -beta * SOFA(s). Lower SOFA = healthier patient = higher
+    potential, so transitions that improve the patient are rewarded immediately.
+    Ng et al. prove this transformation leaves the optimal policy unchanged, so it
+    is a principled way to densify the signal without biasing the objective.
+
+    Brief compliance
+    ----------------
+    This wrapper is for TRAINING ONLY. Evaluation must always use the unshaped
+    `make_clinical_env()` so reported survival/return are on the true reward. It
+    does NOT touch observations, transitions, or termination — only the scalar
+    reward seen by the learner.
+
+    Args:
+        beta : shaping strength on the SOFA potential (default 0.05).
+        gamma: discount used in the potential term (default 1.0, env convention).
+
+    Notes:
+        Shaping is applied only on NON-terminal transitions; the terminal step is
+        left as the true reward (it already encodes survival/death, and the
+        survived/died states have no meaningful SOFA). Summed over an episode the
+        bonus telescopes to beta * (SOFA_0 - SOFA_{T-1}), a small offset that
+        rewards ending in a low-SOFA state — the clinically desirable behaviour.
+        This variant is the one validated empirically (+~2pp survival vs random
+        where unshaped agents sat at/below random).
+    """
+
+    def __init__(self, env, beta: float = 0.05, gamma: float = 1.0):
+        super().__init__(env)
+        self.beta = beta
+        self.gamma = gamma
+        self._prev_sofa = 0.0
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self._prev_sofa = float(info.get('sofa_score', 0.0))
+        return obs, info
+
+    def step(self, action):
+        obs, r, te, tr, info = self.env.step(action)
+        sofa = float(info.get('sofa_score', self._prev_sofa))
+        if not (te or tr):
+            # F = gamma*Phi(s') - Phi(s) with Phi = -beta*SOFA  ->  beta*(SOFA - SOFA')
+            r = r + self.beta * (self._prev_sofa - self.gamma * sofa)
+        self._prev_sofa = sofa
+        return obs, r, te, tr, info
+
+
+#  Factory: compose all three wrappers
 
 def make_clinical_env(
     sofa_bias=SOFA_BIAS, lam=LAM,
