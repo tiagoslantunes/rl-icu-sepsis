@@ -149,47 +149,42 @@ class AcuteEventEnv(gym.Wrapper):
         return obs, r, te, tr, info
 
 
-#  Reward shaping (TRAINING ONLY)
+# Reward shaping (applied during training only)
 
 class SofaShapingEnv(gym.Wrapper):
-    """
-    Potential-based reward shaping (Ng, Harada & Russell, 1999) using the SOFA
-    organ-failure score, to give a DENSE learning signal on top of the sparse
-    survival reward.
+    """Potential-based reward shaping on the SOFA organ-failure score.
 
-    Motivation (theory + diagnosis)
-    -------------------------------
-    The native reward is sparse (+1 at survival only) and carries a small per-step
-    treatment-intensity penalty. Empirically, plain DQN/PPO/A2C therefore optimise
-    the *easy* part of the return — they learn to lower treatment intensity (less
-    penalty) rather than to improve *survival* (a weak, delayed signal). On the
-    clinical env they end up at or barely above the random survival rate.
+    The native reward is sparse (+1 on survival) with a small per-step
+    treatment-intensity penalty. Under this signal the value-based and
+    policy-gradient agents tend to reduce treatment intensity, which lowers the
+    penalty, rather than improve the delayed survival outcome; on the clinical
+    environment their survival rate stays close to that of the random policy.
 
-    Potential-based shaping adds F(s, s') = gamma * Phi(s') - Phi(s) with the
-    potential Phi(s) = -beta * SOFA(s). Lower SOFA = healthier patient = higher
-    potential, so transitions that improve the patient are rewarded immediately.
-    Ng et al. prove this transformation leaves the optimal policy unchanged, so it
-    is a principled way to densify the signal without biasing the objective.
+    Following Ng, Harada and Russell (1999), the shaping term
+    F(s, s') = gamma * Phi(s') - Phi(s) with potential Phi(s) = -beta * SOFA(s)
+    rewards transitions that reduce SOFA (i.e. an improving patient). Because the
+    shaping is potential-based, the optimal policy is provably unchanged, so the
+    transformation densifies the learning signal without altering the objective.
 
-    Brief compliance
-    ----------------
-    This wrapper is for TRAINING ONLY. Evaluation must always use the unshaped
-    `make_clinical_env()` so reported survival/return are on the true reward. It
-    does NOT touch observations, transitions, or termination — only the scalar
-    reward seen by the learner.
+    The wrapper is used only for training. Evaluation uses the unshaped
+    make_clinical_env so that reported return and survival reflect the true
+    reward. Observations, transition dynamics and termination are left unchanged;
+    only the scalar reward passed to the learner is modified.
 
-    Args:
-        beta : shaping strength on the SOFA potential (default 0.05).
-        gamma: discount used in the potential term (default 1.0, env convention).
+    Parameters
+    ----------
+    beta : float
+        Strength of the SOFA potential (default 0.05).
+    gamma : float
+        Discount used in the potential term (default 1.0, the env convention).
 
-    Notes:
-        Shaping is applied only on NON-terminal transitions; the terminal step is
-        left as the true reward (it already encodes survival/death, and the
-        survived/died states have no meaningful SOFA). Summed over an episode the
-        bonus telescopes to beta * (SOFA_0 - SOFA_{T-1}), a small offset that
-        rewards ending in a low-SOFA state — the clinically desirable behaviour.
-        This variant is the one validated empirically (+~2pp survival vs random
-        where unshaped agents sat at/below random).
+    Notes
+    -----
+    Shaping is applied to non-terminal transitions only; the terminal step keeps
+    the true reward, since the survived/died states have no defined SOFA and the
+    terminal reward already encodes the outcome. Over an episode the bonus
+    telescopes to beta * (SOFA_0 - SOFA_{T-1}), a small term that favours ending
+    in a lower-SOFA state.
     """
 
     def __init__(self, env, beta: float = 0.05, gamma: float = 1.0):
@@ -207,7 +202,7 @@ class SofaShapingEnv(gym.Wrapper):
         obs, r, te, tr, info = self.env.step(action)
         sofa = float(info.get('sofa_score', self._prev_sofa))
         if not (te or tr):
-            # F = gamma*Phi(s') - Phi(s) with Phi = -beta*SOFA  ->  beta*(SOFA - SOFA')
+            # F = gamma * Phi(s') - Phi(s) with Phi = -beta * SOFA
             r = r + self.beta * (self._prev_sofa - self.gamma * sofa)
         self._prev_sofa = sofa
         return obs, r, te, tr, info

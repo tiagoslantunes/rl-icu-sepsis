@@ -15,11 +15,12 @@ EVAL_FREQ = 50_000
 N_EVAL_TRAIN = 100
 N_EVAL_FINAL = 1000
 
-# Performance levers (both are TRAINING-only; evaluation stays on the true reward
-# and the default make_clinical_env, so the brief's required env is unchanged):
-#   SHAPING   - SOFA potential-based reward shaping -> dense survival signal
-#   USE_TUNED - use the Optuna best params (run the notebook Optuna cell first to
-#               produce optuna_best_params.json; otherwise falls back to DEFAULT_HP)
+# Training-time configuration. Both options affect training only; evaluation uses
+# the true reward and the default make_clinical_env, so the required environment is
+# left unchanged.
+#   SHAPING   : SOFA potential-based reward shaping (dense survival signal).
+#   USE_TUNED : use the Optuna best parameters. Run the notebook Optuna cell first
+#               to produce optuna_best_params.json; otherwise DEFAULT_HP is used.
 SHAPING = True
 SHAPING_BETA = 0.05
 USE_TUNED = True
@@ -45,13 +46,19 @@ summary = {"metadata": {
 results = {}
 tags_labels = {}
 
-# FAIR baseline: bucketed by failure mode, same seed scheme as the agents.
+# Reference policies, bucketed by failure mode under the same seed scheme as the
+# agents: the random policy (lower bound) and the clinician expert policy.
 print("=== RANDOM BASELINE (bucketed) ===", flush=True)
 random_buckets = srl.random_baseline_by_condition(n_episodes=N_EVAL_FINAL)
 random_stats = {"return": random_buckets["All"]["return"],
                 "survival": random_buckets["All"]["survival"]}
-results["Random"] = random_buckets          # shows as a group in the comparison plots
+results["Random"] = random_buckets          # shown as a group in the comparison plots
 summary["random"] = random_buckets
+
+print("=== EXPERT BASELINE (clinician policy, bucketed) ===", flush=True)
+expert_buckets = srl.expert_baseline_by_condition(n_episodes=N_EVAL_FINAL)
+results["Expert"] = expert_buckets
+summary["expert"] = expert_buckets
 
 for algo, tag, label in RUNS:
     print(f"\n=== TRAIN {label} ({TIMESTEPS:,} steps, shaping={SHAPING}, tuned={USE_TUNED}) @ {datetime.now().isoformat(timespec='seconds')} ===", flush=True)

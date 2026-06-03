@@ -70,10 +70,10 @@ def evaluate_policy(policy: np.ndarray,
         returns.append(total_r)
         lengths.append(steps)
         intensities.append(total_intensity / max(steps, 1))
-        # Survival is read from the terminal reward (survival -> ~+1, death -> ~0),
-        # which is robust to the accumulated intensity penalty. This MATCHES the
-        # Config B definition (sepsis_rl.evaluate_conditions) so the two configs
-        # are directly comparable.
+        # Survival is read from the terminal reward (about +1 for survival, about
+        # 0 for death), which is robust to the accumulated intensity penalty and
+        # matches the Config B definition in sepsis_rl.evaluate_conditions, so the
+        # two configurations remain directly comparable.
         survivals.append(1.0 if last_r > 0.5 else 0.0)
 
     env.close()
