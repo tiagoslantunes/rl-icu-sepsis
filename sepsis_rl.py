@@ -473,11 +473,20 @@ def feature_importance_dqn(
 ):
     """Permutation feature importance for a trained DQN, on its Q-network.
 
-    For each of the 47 clinical features we permute its values across a sample of
-    states and measure the mean |Delta Q| on the originally-chosen action. Large
-    values = the agent's decision relies heavily on that feature. If the run used
-    VecNormalize, the saved obs stats are applied first so |Delta Q| is computed on
-    the same normalized inputs the network was trained on.
+    For each of the 47 clinical features its values are permuted across a sample of
+    states and the mean absolute change in the Q-value of the originally chosen
+    action is recorded. A large change indicates that the agent's decision is
+    sensitive to that feature. When the run used VecNormalize, the saved
+    observation statistics are applied first, so the perturbation is measured on
+    the same normalised inputs the network was trained on.
+
+    Caveat. This is a sensitivity measure of the Q-function, not a causal measure
+    of importance. The 47 physiological variables are strongly correlated, so
+    permuting one in isolation produces off-distribution inputs and can over- or
+    under-state a feature's role (Hooker et al., 2021). It is also computed for a
+    single trained network. The SHAP-based estimate (``shap_importance_dqn``) is
+    a more principled complement; agreement between the two strengthens the
+    interpretation.
 
     Returns ``(importances, order)`` and saves a horizontal bar chart highlighting
     established sepsis-severity markers.
@@ -551,8 +560,247 @@ def feature_importance_dqn(
     return importances, order
 
 
+def shap_importance_dqn(
+    tag: str,
+    n_background: int = 100,
+    n_explain: int = 300,
+    seed: int = SEED,
+    top_n: int = 20,
+    filename: str = "configB_shap_importance.png",
+    show: bool = True,
+):
+    """SHAP feature importance for a trained DQN.
+
+    Uses a gradient-based SHAP estimator (Lundberg & Lee, 2017) on a wrapper that
+    returns the value of the greedy action, max_a Q(s, a). Mean absolute SHAP
+    values give a per-feature global attribution that, unlike single-feature
+    permutation, accounts for feature interactions and remains on the data
+    manifold. Provided as a complement to ``feature_importance_dqn``; consistent
+    rankings across the two methods make the interpretation more credible.
+
+    Returns ``(importances, order)``. Requires the ``shap`` package.
+    """
+    import torch
+    import shap
+    import matplotlib.pyplot as plt
+    from envs.continuous_sepsis_env import FEATURE_NAMES
+
+    ensure_dirs(OUTPUT_DIR)
+    model = _load_model("DQN", tag, use_best=True)
+    obs_rms = _load_obs_rms(tag)
+
+    rng = np.random.RandomState(seed)
+    env = make_clinical_env()
+    states = []
+    while len(states) < n_background + n_explain:
+        obs, _ = env.reset(seed=int(rng.randint(100_000)))
+        states.append(obs.copy())
+        done = False
+        while not done and len(states) < n_background + n_explain:
+            obs, _, te, tr, _ = env.step(env.action_space.sample())
+            states.append(obs.copy())
+            done = te or tr
+    env.close()
+    states = np.asarray(_normalize_obs(np.asarray(states, dtype=np.float32), obs_rms),
+                        dtype=np.float32)
+    background = torch.as_tensor(states[:n_background], device=model.device)
+    explain = torch.as_tensor(states[n_background:n_background + n_explain], device=model.device)
+
+    class _GreedyValue(torch.nn.Module):
+        def __init__(self, qnet):
+            super().__init__()
+            self.qnet = qnet
+
+        def forward(self, x):
+            return self.qnet(x).max(dim=1, keepdim=True).values
+
+    value_net = _GreedyValue(model.policy.q_net).to(model.device)
+    explainer = shap.GradientExplainer(value_net, background)
+    shap_values = explainer.shap_values(explain)
+    if isinstance(shap_values, list):
+        shap_values = shap_values[0]
+    shap_values = np.asarray(shap_values).reshape(len(explain), len(FEATURE_NAMES))
+    importances = np.mean(np.abs(shap_values), axis=0)
+
+    order = np.argsort(importances)[::-1]
+    markers = {"SOFA", "Lactate", "Mean_BP", "Systolic_BP", "Diastolic_BP",
+               "Urine_Output", "Creatinine", "HR", "RespRate", "GCS", "FiO2"}
+    labels = [FEATURE_NAMES[i] for i in order[:top_n]]
+    vals = importances[order[:top_n]]
+    colors = ["#E53935" if l in markers else "#42A5F5" for l in labels]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.barh(range(top_n)[::-1], vals, color=colors, alpha=0.85)
+    ax.set_yticks(range(top_n)[::-1]); ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xlabel("Mean |SHAP value| on the greedy-action value")
+    ax.set_title(f"DQN SHAP importance - top {top_n} clinical variables\n"
+                 "(red = established sepsis-severity markers)", fontsize=11)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(facecolor="#E53935", label="Sepsis severity marker"),
+                       Patch(facecolor="#42A5F5", label="Other clinical variable")],
+              loc="lower right")
+    fig.tight_layout()
+    path = os.path.join(OUTPUT_DIR, filename)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    print(f"Saved {path}")
+    print("Top 10 features by SHAP:")
+    for r, idx in enumerate(order[:10], 1):
+        mk = " <- sepsis marker" if FEATURE_NAMES[idx] in markers else ""
+        print(f"  {r:2d}. {FEATURE_NAMES[idx]:<16s} {importances[idx]:.5f}{mk}")
+    plt.show() if show else plt.close(fig)
+    return importances, order
+
+
 # --------------------------------------------------------------------------- #
-# Cross-config comparison (reads the REAL Config A metrics from JSON)
+# Learning from demonstrations: behavioural cloning of the clinician policy
+# --------------------------------------------------------------------------- #
+class _BCNet(torch.nn.Module):
+    """Small MLP classifier mapping a 47-dim observation to one of 25 actions."""
+
+    def __init__(self, n_in: int = 47, n_actions: int = N_ACTIONS,
+                 hidden=(128, 128)):
+        super().__init__()
+        layers, d = [], n_in
+        for h in hidden:
+            layers += [torch.nn.Linear(d, h), torch.nn.ReLU()]
+            d = h
+        layers += [torch.nn.Linear(d, n_actions)]
+        self.net = torch.nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class BCPolicy:
+    """Trained behavioural-cloning policy with an SB3-style ``predict`` interface.
+
+    Stores the standardisation statistics so inference matches training.
+    """
+
+    def __init__(self, net: "_BCNet", mean: np.ndarray, std: np.ndarray):
+        self.net = net
+        self.mean = mean
+        self.std = std
+
+    def predict(self, obs, deterministic: bool = True):
+        x = (np.asarray(obs, dtype=np.float32) - self.mean) / self.std
+        with torch.no_grad():
+            logits = self.net(torch.as_tensor(x, device=DEVICE).unsqueeze(0))
+            if deterministic:
+                a = int(logits.argmax(dim=1).item())
+            else:
+                a = int(torch.distributions.Categorical(logits=logits).sample().item())
+        return a, None
+
+
+def collect_expert_demonstrations(n_episodes: int = 4000, seed_offset: int = 60_000,
+                                  seed: int = SEED):
+    """Roll out the clinician expert policy and record (observation, action) pairs.
+
+    Demonstrations are gathered on the clinical environment, so the observations
+    carry the same noise and missingness the agents face, while the action labels
+    come from the expert acting on the true patient state (the AI Clinician
+    behaviour policy, Komorowski et al., 2018). Returns ``(X, y)`` with
+    ``X`` of shape (n_samples, 47) and integer action labels ``y``.
+    """
+    rng = np.random.RandomState(seed)
+    env = make_clinical_env()
+    base = env.unwrapped
+    expert = base._raw._expert_policy.astype(np.float64)
+    row_sums = expert.sum(axis=1, keepdims=True)
+    expert = np.divide(expert, np.maximum(row_sums, 1e-12),
+                       out=np.zeros_like(expert), where=row_sums > 0)
+
+    X, y = [], []
+    for ep in range(n_episodes):
+        obs, info = env.reset(seed=seed_offset + ep)
+        done = False
+        while not done:
+            state = int(base._raw._current_state)
+            probs = expert[state]
+            a = int(rng.choice(N_ACTIONS, p=probs)) if probs.sum() > 0 \
+                else int(env.action_space.sample())
+            X.append(np.asarray(obs, dtype=np.float32))
+            y.append(a)
+            obs, reward, te, tr, info = env.step(a)
+            done = te or tr
+    env.close()
+    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.int64)
+
+
+def train_bc(X, y, epochs: int = 30, batch_size: int = 256, lr: float = 1e-3,
+             seed: int = SEED, verbose: bool = True) -> BCPolicy:
+    """Behavioural cloning: a supervised MLP that imitates the expert from
+    observations.
+
+    This is the imitation (pre-training) component of demonstration-based deep RL
+    such as DQfD (Hester et al., 2018): a policy is learned from expert
+    demonstrations by action classification. Inputs are standardised because the
+    physiological features span very different scales.
+    """
+    set_seed(seed)
+    mean = X.mean(axis=0)
+    std = X.std(axis=0) + 1e-6
+    Xt = torch.as_tensor((X - mean) / std, dtype=torch.float32, device=DEVICE)
+    yt = torch.as_tensor(y, dtype=torch.long, device=DEVICE)
+    net = _BCNet().to(DEVICE)
+    opt = torch.optim.Adam(net.parameters(), lr=lr)
+    loss_fn = torch.nn.CrossEntropyLoss()
+
+    n = len(Xt)
+    for ep in range(epochs):
+        perm = torch.randperm(n, device=DEVICE)
+        running = 0.0
+        for i in range(0, n, batch_size):
+            idx = perm[i:i + batch_size]
+            opt.zero_grad()
+            loss = loss_fn(net(Xt[idx]), yt[idx])
+            loss.backward()
+            opt.step()
+            running += float(loss) * len(idx)
+        if verbose and (ep + 1) % 10 == 0:
+            with torch.no_grad():
+                acc = (net(Xt).argmax(dim=1) == yt).float().mean().item()
+            print(f"  BC epoch {ep + 1:3d}  loss={running / n:.4f}  train_acc={acc:.3f}")
+    return BCPolicy(net, mean, std)
+
+
+def evaluate_bc(bc: BCPolicy, n_episodes: int = 1000, seed_offset: int = 20_000):
+    """Evaluate a behavioural-cloning policy with the same bucketed, CI-reported
+    protocol as the agents and reference policies."""
+    raw = {b: {"ret": [], "surv": [], "intens": []} for b in BUCKETS}
+    action_counts = np.zeros(N_ACTIONS, dtype=np.int64)
+    env = make_clinical_env()
+    for ep in range(n_episodes):
+        obs, info = env.reset(seed=seed_offset + ep)
+        ep_noisy = bool(info.get("noisy_episode", False))
+        ep_missing = info.get("missing_features") is not None
+        ep_acute = False
+        done, ep_ret, last_r = False, 0.0, 0.0
+        ep_intens, ep_steps = 0.0, 0
+        while not done:
+            a, _ = bc.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(a)
+            done = terminated or truncated
+            ep_ret += reward; last_r = reward
+            ep_intens += INTENSITY[a]; ep_steps += 1; action_counts[a] += 1
+            if info.get("acute_event", False):
+                ep_acute = True
+        surv = 1.0 if last_r > 0.5 else 0.0
+        intens = ep_intens / max(ep_steps, 1)
+        hit = ["All"]
+        if not ep_noisy and not ep_missing and not ep_acute: hit.append("Clean")
+        if ep_noisy: hit.append("Noisy")
+        if ep_missing: hit.append("Missing")
+        if ep_acute: hit.append("Acute")
+        for b in hit:
+            raw[b]["ret"].append(ep_ret); raw[b]["surv"].append(surv); raw[b]["intens"].append(intens)
+    env.close()
+    return _summarise_buckets(raw, action_counts, tag="bc")
+
+
+# --------------------------------------------------------------------------- #
+# Cross-config comparison (reads the Config A metrics from JSON)
 # --------------------------------------------------------------------------- #
 def compare_configs(
     results_b: Dict[str, Dict[str, object]],
