@@ -1,0 +1,17 @@
+{
+  "policy_iteration_survival": 78.8,
+  "warmstart_state_coverage": 0.9958100558659218,
+  "target_survival": 70.0,
+  "cold": {
+    "episodes_to_target": null,
+    "survival_at_2000ep": 67.33333333333333,
+    "final_survival": 0.688,
+    "final_intensity": 0.4524437086262527
+  },
+  "warm": {
+    "episodes_to_target": 9000,
+    "survival_at_2000ep": 68.66666666666667,
+    "final_survival": 0.719,
+    "final_intensity": 0.34468004462965757
+  }
+}

@@ -88,6 +88,64 @@ def evaluate_policy(policy: np.ndarray,
 
 
 # ─────────────────────────────────────────────────────────────
+#  Learning from demonstrations: expert Q warm-start
+# ─────────────────────────────────────────────────────────────
+
+def expert_warmstart_q(n_episodes: int = 3000,
+                       gamma: float = GAMMA,
+                       seed: int = 42) -> np.ndarray:
+    """Seed a Q-table from expert demonstrations using Monte Carlo returns.
+
+    The clinician expert policy (the AI Clinician behaviour policy shipped with the
+    benchmark, Komorowski et al. 2018) is rolled out, and for each demonstrated
+    trajectory the discounted return-to-go is averaged into Q for the visited
+    (state, action) pairs. This is the tabular analogue of the demonstration
+    pre-training stage of DQfD (Hester et al. 2018): the action values are
+    initialised from expert behaviour rather than from zeros, before any
+    temporal-difference learning takes place.
+
+    Parameters
+    ----------
+    n_episodes : number of expert demonstration episodes.
+    gamma      : discount factor used for the Monte Carlo returns.
+    seed       : RNG seed.
+
+    Returns
+    -------
+    Q_init : (N_STATES, N_ACTIONS) array; entries for undemonstrated pairs are 0.
+    """
+    rng = np.random.RandomState(seed)
+    env = make_sepsis_env()
+    raw = env.unwrapped
+    expert = raw._expert_policy.astype(np.float64)
+    row_sums = expert.sum(axis=1, keepdims=True)
+    expert = np.divide(expert, np.maximum(row_sums, 1e-12),
+                       out=np.zeros_like(expert), where=row_sums > 0)
+
+    Q = np.zeros((N_STATES, N_ACTIONS))
+    counts = np.zeros((N_STATES, N_ACTIONS))
+    for _ in range(n_episodes):
+        s, _ = env.reset(seed=int(rng.randint(100_000)))
+        s = int(s)
+        done, traj = False, []
+        while not done:
+            p = expert[s]
+            a = int(rng.choice(N_ACTIONS, p=p)) if p.sum() > 0 \
+                else int(env.action_space.sample())
+            ns, r, te, tr, _ = env.step(a)
+            done = te or tr
+            traj.append((s, a, r))
+            s = int(ns)
+        g = 0.0
+        for (st, at, rt) in reversed(traj):
+            g = rt + gamma * g
+            Q[st, at] += g
+            counts[st, at] += 1
+    env.close()
+    return np.divide(Q, counts, out=np.zeros_like(Q), where=counts > 0)
+
+
+# ─────────────────────────────────────────────────────────────
 #  1. Policy Iteration  (model-based)
 # ─────────────────────────────────────────────────────────────
 
