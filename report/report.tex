@@ -1084,6 +1084,46 @@ upward bias ($+0.194$) confirms the max-operator overestimation; points should
 lie on the dashed diagonal for a calibrated estimator.}
 \label{fig:b_overest}
 \end{minipage}
+
+\vspace{4pt}
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_1m_learning_curves_zoom.png}
+\caption{Config~B learning curves: first $200$k steps. The early absorption of the
+SOFA shaping signal is visible as a rapid initial improvement before the rate
+slows toward the end of the exploration phase.}
+\label{fig:b_zoom}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_1m_robustness_return.png}
+\caption{Config~B mean return by failure mode. Complements the survival
+decomposition: the return gap between clean and missing-lab episodes reflects
+the accumulated intensity penalty in partial-observation episodes.}
+\label{fig:b_robust_ret}
+\end{minipage}
+
+\vspace{4pt}
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_1m_intensity.png}
+\caption{Mean treatment intensity per agent ($1$M run). A2C is the most
+parsimonious ($0.149$); DQN and PPO maintain moderate intensity while
+achieving higher survival.}
+\label{fig:b_intensity}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_shaping_survival.png}
+\caption{SOFA reward shaping ablation ($150$k steps): unshaped PPO vs shaped
+PPO vs random, by failure mode. Shaping improves clean-episode survival but
+the effect is clearer at the full $1$M budget.}
+\label{fig:b_shaping}
+\end{minipage}
 \end{figure}
 
 \endgroup
