@@ -1,5 +1,5 @@
 {
-  "mean_predicted_q": 0.8303593662401507,
-  "mean_realised_return": 0.6359836997725551,
-  "bias": 0.19437566646759563
+  "mean_predicted_q": 0.7220089698089368,
+  "mean_realised_return": 0.6063694662805131,
+  "bias": 0.11563950352842363
 }

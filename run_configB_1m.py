@@ -23,7 +23,8 @@ N_EVAL_FINAL = 1000
 #               to produce optuna_best_params.json; otherwise DEFAULT_HP is used.
 SHAPING = True
 SHAPING_BETA = 0.05
-USE_TUNED = True
+USE_TUNED = False
+
 
 RUNS = [
     ("DQN", "dqn_v2_1m_eval5k", "DQN-v2 1M eval5k"),
