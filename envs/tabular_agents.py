@@ -74,6 +74,8 @@ def evaluate_policy(policy: np.ndarray,
         # 0 for death), which is robust to the accumulated intensity penalty and
         # matches the Config B definition in sepsis_rl.evaluate_conditions, so the
         # two configurations remain directly comparable.
+        # Threshold 0.5 robustly separates survival (+1 before penalty) from death (0):
+        # max cumulative intensity penalty = lam * max_intensity * max_steps ≈ 0.2 < 0.5.
         survivals.append(1.0 if last_r > 0.5 else 0.0)
 
     env.close()

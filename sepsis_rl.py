@@ -265,7 +265,7 @@ def evaluate_conditions(
     algo: str,
     n_episodes: int = 300,
     use_best: bool = True,
-    seed_offset: int = 20_000,
+    seed_offset: int = 20_000,   # offset from training seeds (0–9999) to avoid overlap
 ) -> Dict[str, Dict[str, float]]:
     """Evaluate a trained agent on the DEFAULT clinical env, bucketing episodes
     by failure mode.
@@ -886,8 +886,8 @@ def plot_learning_curves(
         baseline    : horizontal dashed line (e.g. random baseline return)
         smooth      : EMA alpha in [0,1]. 0 = raw, 1 = fully flat.
         zoom_steps  : if set, only show the first N timesteps.
-        show_trend  : if True, draws a linear trend line (regressão linear)
-                      and prints the slope per 100k steps.
+        show_trend  : if True, draws a linear trend line and prints the slope
+                      per 100k steps.
     """
     import matplotlib.pyplot as plt
 
@@ -967,7 +967,7 @@ def plot_curves_grid(
     for ax, (tag, label) in zip(axes, tags_labels.items()):
         ts, mean, _ = _load_eval_log(tag)
         if ts is None:
-            ax.set_title(f"{label}\n(sem log)")
+            ax.set_title(f"{label}\n(no log)")
             continue
         if zoom_steps is not None:
             mask = ts <= zoom_steps
@@ -977,9 +977,9 @@ def plot_curves_grid(
 
         sm = _ema(mean, smooth)
 
-        # Curva raw (muito transparente)
+        # raw curve (low alpha)
         ax.plot(ts, mean, lw=0.8, alpha=0.15, color="steelblue")
-        # Curva EMA
+        # EMA curve
         ax.plot(ts, sm, lw=2.5, color="steelblue", label="EMA")
 
         # Trend line - solid, same colour, medium alpha
@@ -1181,7 +1181,7 @@ def tune(
 
     def objective(trial):
         hp = _suggest_hp(trial, algo)
-        # eval_freq = 10% dos timesteps → 10 pontos por trial (curva visível)
+        # eval_freq = 10% of timesteps → 10 evaluation points per trial
         trial_eval_freq = max(1000, timesteps // 10)
         _, tag = train_agent(algo, timesteps=timesteps, normalize=normalize,
                              seed=seed, hyperparams=hp,
@@ -1223,7 +1223,7 @@ def save_optuna_plots(study, name: str, show: bool = True):
 
 
 def _find_best_optuna_trial(algo: str, n_trials: int = 15) -> Tuple[int, str]:
-    """Lê os eval logs em disco e devolve (best_trial_number, tag)."""
+    """Read eval logs from disk and return (best_trial_number, tag)."""
     best_ret, best_t = -np.inf, 0
     for t in range(n_trials):
         tag = f"{algo.lower()}_optuna_t{t}"
@@ -1260,7 +1260,7 @@ def plot_best_trial_curves(
     fig, ax = plt.subplots(figsize=(11, 6))
     plotted = 0
 
-    # Normalizar input: aceita studies dict ou lista de nomes
+    # Normalise input: accepts a studies dict or a list of algo names
     if isinstance(algos_or_studies, dict):
         items = []
         for algo, study in algos_or_studies.items():

@@ -59,7 +59,7 @@ def make_sepsis_env(sofa_bias: float = SOFA_BIAS, lam: float = LAM):
     if lam > 0.0:
         for a in range(A):
             R_new[:, a, :] -= lam * INTENSITY[a]
-        print(f'make_sepsis_env | lam={lam} → intensity penalty active')
+        print(f'make_sepsis_env | lam={lam} -> intensity penalty active')
 
     # Shift initial-state distribution toward sicker patients
     sofa   = raw._sofa_scores.flatten()
@@ -72,7 +72,7 @@ def make_sepsis_env(sofa_bias: float = SOFA_BIAS, lam: float = LAM):
         d0_new         = np.zeros(S)
         d0_new[:S - 2] = weight
         mean_sofa = float(np.average(sofa_clinical, weights=weight))
-        print(f'make_sepsis_env | sofa_bias={sofa_bias} → mean start SOFA: {mean_sofa:.2f}')
+        print(f'make_sepsis_env | sofa_bias={sofa_bias} -> mean start SOFA: {mean_sofa:.2f}')
 
     raw._r_mat = R_new
     raw._d_0   = d0_new
