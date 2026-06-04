@@ -1031,21 +1031,33 @@ $15$k-episode budget.}
 
 \begin{figure}[H]
 \centering
-\begin{minipage}{0.48\textwidth}
+\begin{minipage}{\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_1m_learning_curves.png}
-\caption{Config~B $1$M-step learning curves (EMA-smoothed). The trend overlay
-confirms active improvement throughout training; no agent has fully plateaued.}
+\includegraphics[width=0.95\linewidth,height=0.22\textheight,keepaspectratio]%
+  {configB_tuned_grid.png}
+\caption{Config~B learning curves per algorithm with linear trend overlay
+(EMA-smoothed). The positive slope in each panel confirms active improvement
+throughout the $1$M-step budget; the trend magnitude quantifies the rate.}
 \label{fig:b_curves}
-\end{minipage}\hfill
+\end{minipage}
+
+\vspace{4pt}
 \begin{minipage}{0.48\textwidth}
 \centering
 \includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
   {configB_1m_robustness_survival.png}
 \caption{Survival by failure mode. Missing labs are the most damaging
-perturbation; acute events are irreducible.}
+perturbation; acute events are irreducible for all policies.}
 \label{fig:b_robust}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_bc_survival.png}
+\caption{Behavioural cloning vs random and expert by failure mode. BC matches
+the expert on clean episodes; the gap on noisy/missing episodes quantifies
+the cost of acting on corrupted observations.}
+\label{fig:b_bc}
 \end{minipage}
 
 \vspace{4pt}
@@ -1120,9 +1132,50 @@ achieving higher survival.}
 \includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
   {configB_shaping_survival.png}
 \caption{SOFA reward shaping ablation ($150$k steps): unshaped PPO vs shaped
-PPO vs random, by failure mode. Shaping improves clean-episode survival but
-the effect is clearer at the full $1$M budget.}
+PPO vs random, by failure mode. Shaping lifts clean-episode survival; the
+effect is more pronounced at the full $1$M budget.}
 \label{fig:b_shaping}
+\end{minipage}
+
+\vspace{4pt}
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_shap_importance.png}
+\caption{SHAP feature importance on the DQN Q-network. Agreement with the
+permutation rankings (Fig.~\ref{fig:b_feat}) strengthens the interpretability
+claim; established sepsis-severity markers rank highest in both.}
+\label{fig:b_shap}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {configB_1m_learning_curves_zoom.png}
+\caption{Learning curves: first $200$k steps. The rapid early improvement
+shows the SOFA shaping signal being absorbed before the rate slows as the
+policy converges.}
+\label{fig:b_zoom}
+\end{minipage}
+
+\subsection{Hyperparameter search (Optuna)}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {optuna_dqn_history.png}
+\caption{Optuna optimisation history for DQN ($15$ trials, $50$k steps each).
+The best trial achieves a materially better proxy return than the median.}
+\label{fig:optuna_hist}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+  {optuna_dqn_importance.png}
+\caption{Optuna hyperparameter importance for DQN. Learning rate and exploration
+fraction are the dominant factors; batch size and update interval are secondary.}
+\label{fig:optuna_imp}
 \end{minipage}
 \end{figure}
 
