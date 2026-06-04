@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import sepsis_rl as srl
 
 TIMESTEPS = 1_000_000
-EVAL_FREQ = 50_000
+EVAL_FREQ = 5_000
 N_EVAL_TRAIN = 100
 N_EVAL_FINAL = 1000
 
@@ -26,9 +26,9 @@ SHAPING_BETA = 0.05
 USE_TUNED = True
 
 RUNS = [
-    ("DQN", "dqn_v2_1m", "DQN-v2 1M"),
-    ("PPO", "ppo_v2_1m", "PPO-v2 1M"),
-    ("A2C", "a2c_v2_1m", "A2C 1M"),
+    ("DQN", "dqn_v2_1m_eval5k", "DQN-v2 1M eval5k"),
+    ("PPO", "ppo_v2_1m_eval5k", "PPO-v2 1M eval5k"),
+    ("A2C", "a2c_v2_1m_eval5k", "A2C 1M eval5k"),
 ]
 
 Path("plots").mkdir(exist_ok=True)

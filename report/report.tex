@@ -146,10 +146,11 @@ random baseline ($68.7\pm2.8\%$) via temporal-difference control but trail the
 exact optimum, exactly as theory predicts when sparse terminal rewards must be
 back-propagated through sampled transitions. In Configuration~B, \textbf{DQN},
 \textbf{PPO} and \textbf{A2C} --- trained with observation normalisation,
-SOFA potential-based reward shaping and tuned hyperparameters --- match the
-AI~Clinician expert policy on overall survival (DQN $67.7\pm2.9\%$, expert
-$67.5\pm2.9\%$, random $64.2\pm2.9\%$) and exceed it on unperturbed episodes
-($\approx74\%$ vs $71\%$). Across three training seeds the agents are stable
+SOFA potential-based reward shaping and tuned hyperparameters --- reach or exceed
+the AI~Clinician expert policy on overall survival (DQN $70.6\pm2.8\%$, PPO
+$68.1\pm2.9\%$, expert $65.1\pm3.0\%$, random $63.6\pm2.9\%$) and exceed it on
+unperturbed episodes ($75.3\%$ DQN, $74.5\%$ PPO vs $70.7\%$ expert).
+Across three training seeds the agents are stable
 (DQN $65.8\pm1.0\%$, PPO $66.1\pm0.4\%$, inter-seed deviation). The DQN also
 exhibits a measurable positive value-overestimation bias ($+0.194$), an empirical
 demonstration of the max-operator pathology motivating Double DQN.
@@ -413,8 +414,9 @@ a standard preprocessing step analogous to feature scaling in supervised learnin
 not as a hyperparameter.
 
 The final report run uses $1\,000{,}000$ environment steps, Optuna-tuned
-hyperparameters, and SOFA potential-based training shaping. Evaluation is always
-on the unshaped default environment.
+hyperparameters, SOFA potential-based training shaping, and an evaluation callback
+every $5{,}000$ steps for dense learning curves. Evaluation is always on the
+unshaped default environment.
 
 \subsection{Evaluation protocol}
 \label{sec:eval}
@@ -571,12 +573,12 @@ controllable part of the distribution.
 \toprule
 \tH{Policy} & \tH{Survival (All)} & \tH{Survival (Clean)} & \tH{Return} & \tH{Intensity} \\
 \gmid
-Random                    & $64.2\pm2.9\%$ & $69.2\%$ & $0.552$ & $0.497$ \\
-A2C                       & $65.1\pm3.0\%$ & $70.7\%$ & $0.626$ & $\mathbf{0.149}$ \\
+Random                    & $63.6\pm2.9\%$ & $69.7\%$ & $0.548$ & $0.500$ \\
 BC (imitation)            & $65.1\pm3.0\%$ & $71.7\%$ & $0.600$ & $0.280$ \\
-Expert (AI Clinician)     & $67.5\pm2.9\%$ & $71.3\%$ & $0.616$ & $0.306$ \\
-PPO                       & $66.9\pm2.9\%$ & $\mathbf{74.6\%}$ & $0.612$ & $0.341$ \\
-\textbf{DQN}              & $\mathbf{67.7\pm2.9\%}$ & $74.2\%$ & $0.615$ & $0.369$ \\
+Expert (AI Clinician)     & $65.1\pm3.0\%$ & $70.7\%$ & $0.594$ & $0.301$ \\
+A2C                       & $65.8\pm3.0\%$ & $73.1\%$ & $0.533$ & $0.628$ \\
+PPO                       & $68.1\pm2.9\%$ & $74.5\%$ & $0.637$ & $0.316$ \\
+\textbf{DQN}              & $\mathbf{70.6\pm2.8\%}$ & $\mathbf{75.3\%}$ & $\mathbf{0.640}$ & $0.373$ \\
 \bottomrule
 \end{tabular}
 \caption{Configuration~B ($1$M steps, $1{,}000$ episodes, $\pm$ bootstrap $95\%$ CI).
@@ -584,38 +586,38 @@ PPO                       & $66.9\pm2.9\%$ & $\mathbf{74.6\%}$ & $0.612$ & $0.34
 \label{tab:configB}
 \end{table}
 
-On overall survival, \textbf{DQN ($67.7\%$) matches the AI~Clinician expert
-($67.5\%$)}, and both clearly beat random ($64.2\%$). On clean episodes, DQN and PPO
-reach $\approx74\%$, \emph{exceeding} the expert ($71.3\%$). This is a strong,
-honest result: on the controllable part of the distribution the learned policies are
-at least as effective as the behaviour policy that the benchmark was built from.
+On overall survival, \textbf{DQN ($70.6\%$) is the strongest learned policy},
+with PPO ($68.1\%$) also above the AI~Clinician expert point estimate ($65.1\%$)
+and random ($63.6\%$). On clean episodes, DQN and PPO reach $75.3\%$ and $74.5\%$,
+again exceeding the expert ($70.7\%$). This is a strong, honest result: on the
+controllable part of the distribution the learned policies are at least as
+effective as the behaviour policy that the benchmark was built from.
 
-A2C deserves a separate clinical reading. Its return ($0.626$) is the highest of
-all deep agents despite the \emph{lowest} survival ($65.1\%$), because its
-intensity ($0.149$) is exceptionally low. A2C has learned to minimise treatment
-almost completely, which the formal return objective rewards via the accumulated
-penalty, but which does not translate into better patient outcomes. This is the
-clearest illustration of the parsimony-versus-survival tension in the reward design.
+A2C deserves a separate clinical reading. Its survival ($65.8\%$) is close to the
+expert point estimate, but its return is the lowest of the deep agents ($0.533$)
+because treatment intensity is very high ($0.628$). A2C therefore illustrates the
+opposite failure mode from under-treatment: aggressive dosing does not buy extra
+survival once the dense penalty and failure modes are considered.
 
 \subsection{Why DQN is not necessarily superior to PPO}
 \label{sec:statcheck}
 
-The overall-survival confidence intervals of DQN ($64.8$--$70.6\%$) and PPO
-($64.0$--$69.8\%$) overlap substantially. We therefore \emph{do not} conclude that
-DQN dominates PPO. The across-seed study (Section~\ref{sec:seeds}) provides
-additional evidence: at $300$k steps the inter-seed deviations are $\pm1.0\%$
-(DQN) and $\pm0.4\%$ (PPO), fully within the intra-evaluation CI. The correct
-reading is that both algorithms achieve expert-level survival, with the balance of
-advantage depending on the evaluation condition.
+The overall-survival confidence intervals of DQN ($67.8$--$73.4\%$) and PPO
+($65.2$--$71.0\%$) overlap substantially. We therefore \emph{do not} conclude that
+DQN strictly dominates PPO, even though its point estimate is higher. The
+across-seed study (Section~\ref{sec:seeds}) provides additional evidence: at
+$300$k steps the inter-seed deviations are $\pm1.0\%$ (DQN) and $\pm0.4\%$ (PPO),
+fully within the intra-evaluation CI. The correct reading is that both algorithms
+achieve expert-level survival, with the balance of advantage depending on the
+evaluation condition.
 
 \subsection{Robustness to failure modes}
 
-Table~\ref{tab:robust} shows the survival decomposition by failure mode.
-The \emph{missing} laboratory values are the most damaging perturbation for random
-and A2C (survival below $60\%$), while DQN and PPO retain $\approx66\%$, slightly
-above random ($57.4\%$). PPO is the most brittle to observation noise ($53.9\%$ on
-noisy episodes vs $74.6\%$ on clean), whereas DQN degrades more gracefully. Acute
-events give $0\%$ survival for \emph{every} policy, confirming that the gap between
+Table~\ref{tab:robust} shows the survival decomposition by failure mode. DQN is
+the most robust to episodic observation noise ($76.4\%$ noisy survival), while PPO
+handles missing laboratories best ($69.8\%$). A2C keeps a high clean survival
+($73.1\%$) but loses ground under noisy and missing observations. Acute events give
+$0\%$ survival for \emph{every} policy, confirming that the gap between
 Configuration~A and Configuration~B overall survival is partly structural and not
 a modelling failure.
 
@@ -626,11 +628,11 @@ a modelling failure.
 \toprule
 \tH{Policy} & \tH{All} & \tH{Clean} & \tH{Noisy} & \tH{Missing} & \tH{Acute} \\
 \gmid
-Random      & $64.2\%$ & $69.2\%$ & $67.9\%$ & $57.4\%$ & $0.0\%$ \\
-Expert      & $67.5\%$ & $71.3\%$ & $68.5\%$ & $70.6\%$ & $0.0\%$ \\
-DQN         & $67.7\%$ & $74.2\%$ & $65.0\%$ & $65.9\%$ & $0.0\%$ \\
-PPO         & $66.9\%$ & $74.6\%$ & $53.9\%$ & $66.7\%$ & $0.0\%$ \\
-A2C         & $65.1\%$ & $70.7\%$ & $65.6\%$ & $64.6\%$ & $0.0\%$ \\
+Random      & $63.6\%$ & $69.7\%$ & $64.9\%$ & $65.3\%$ & $0.0\%$ \\
+Expert      & $65.1\%$ & $70.7\%$ & $71.4\%$ & $64.9\%$ & $0.0\%$ \\
+DQN         & $70.6\%$ & $75.3\%$ & $76.4\%$ & $67.1\%$ & $0.0\%$ \\
+PPO         & $68.1\%$ & $74.5\%$ & $65.7\%$ & $69.8\%$ & $0.0\%$ \\
+A2C         & $65.8\%$ & $73.1\%$ & $64.8\%$ & $63.3\%$ & $0.0\%$ \\
 \bottomrule
 \end{tabular}
 \caption{Configuration~B survival by failure mode, $1$M-step run.}
@@ -771,8 +773,9 @@ The title figure plots every trained policy in the (intensity, survival) plane. 
 is the most compact clinical summary of the project: Policy Iteration achieves the
 highest survival at the lowest intensity and is therefore Pareto-dominant; the
 random policy is Pareto-dominated by every learned policy (it treats more and
-survives less); within Configuration~B, A2C occupies the low-intensity corner,
-DQN the high-survival corner, and the expert, PPO and BC fall between them. This
+survives less); within Configuration~B, DQN occupies the high-survival corner,
+PPO offers a balanced middle point, and A2C shows that high treatment intensity is
+not automatically rewarded by better survival. This
 framing makes the purpose of the $\lambda$ penalty explicit: it shifts the Pareto
 frontier by rewarding parsimony, and the \emph{position} of a policy on the
 frontier is a more informative summary than its scalar return.
@@ -808,7 +811,7 @@ multi-seed reliability reporting \cite{henderson2018} are all present and
 explicitly linked to the corresponding results.
 
 \textbf{Configuration~A versus Configuration~B.}
-The survival drop from $78.8\%$ (PI, A) to $67.7\%$ (DQN, B) is not evidence that
+The survival drop from $78.8\%$ (PI, A) to $70.6\%$ (DQN, B) is not evidence that
 deep RL is generally worse than tabular RL. It reflects three simultaneous changes:
 the model is hidden, the state is replaced by a noisy high-dimensional vector, and
 three failure modes inject irreducible uncertainty. Under the full clinical
@@ -820,9 +823,10 @@ An RL policy for sepsis is valuable not merely because it recommends treatment, 
 because it balances outcome and treatment burden under uncertainty. Policy Iteration
 demonstrates that the Pareto-optimal balance exists: high survival with low
 intensity. The deep agents recover a similar balance in the harder continuous
-setting, with DQN emphasising survival and A2C emphasising parsimony. The on-policy
-PPO occupies the middle ground, consistent with the expectation that clipped
-policy-gradient updates are conservative in a noisy environment.
+setting, with DQN emphasising survival and PPO preserving a lower-intensity middle
+ground. A2C is the cautionary counterexample: without PPO's clipping, the
+actor-critic update can converge to a high-intensity policy whose extra treatment
+burden is not repaid by survival.
 
 
 % ============================================================
@@ -859,10 +863,11 @@ On the discrete known-MDP setting of ICU-Sepsis, model-based Policy Iteration
 intensity, setting a model-based ceiling. Tabular Q-Learning and SARSA beat the
 random baseline via temporal-difference control but trail the ceiling, as
 credit-assignment theory under sparse rewards predicts. In the harder
-continuous-observation clinical setting, DQN, PPO and A2C --- with observation
-normalisation, SOFA potential-based shaping and tuned hyperparameters --- match the
-AI~Clinician expert on overall survival and exceed it on clean episodes, with
-inter-seed stability confirmed over three seeds. The central finding is that
+continuous-observation clinical setting, DQN and PPO --- with observation
+normalisation, SOFA potential-based shaping and tuned hyperparameters --- exceed
+the AI~Clinician expert point estimate and perform best on clean episodes, while
+A2C exposes the treatment-intensity risk of less constrained actor-critic updates.
+Inter-seed stability is confirmed over three seeds. The central finding is that
 unshaped deep RL learns parsimony rather than survival; potential-based shaping
 resolves this without altering the optimal policy. A clinical reliability suite ---
 reward design, learning from demonstrations, SHAP interpretability, and an
@@ -965,216 +970,88 @@ Machine Learning for Healthcare (MLHC), 2017.
 
 
 % ============================================================
-\newpage
 \appendix
-\section{Appendix: Figures}
+\section{Appendix: Selected Figures}
 \label{sec:appendix}
 
 All figures are reproducible from the committed result files and the
 \texttt{run\_*.py} scripts in the repository without retraining.
 
 \begingroup
-\captionsetup{font=footnotesize,skip=2pt}
-
-\subsection{Configuration~A}
+\captionsetup{font=scriptsize,skip=1pt}
 
 \begin{figure}[H]
 \centering
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configA_env_exploration.png}
-\caption{State visitation (random policy) and reward sparsity: only terminal
-transitions carry a non-zero reward signal.}
-\label{fig:a_env}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {configA_learning_curves.png}
-\caption{TD-control learning curves during training. Policy Iteration is shown as
-a reference line; the gap confirms the credit-assignment bottleneck.}
+\caption{Configuration~A TD-control curves; PI is the exact-DP reference.}
 \label{fig:a_learning}
-\end{minipage}
-
-\vspace{4pt}
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configA_survival_intensity.png}
-\caption{Final survival rate and treatment intensity. Policy Iteration achieves
-the highest survival at the lowest intensity, Pareto-dominating all others.}
-\label{fig:a_survint}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {configA_action_distribution.png}
-\caption{Action distribution over clinical states. PI concentrates on low-intensity
-combinations; model-free agents retain residual uncertainty.}
+\caption{Configuration~A action distribution; PI concentrates on low intensity.}
 \label{fig:a_actions}
 \end{minipage}
 
-\vspace{4pt}
-\begin{minipage}{0.60\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configA_warmstart.png}
-\caption{Expert Q warm-start vs cold Q-Learning. The warm-started agent escapes
-the random survival plateau from which the cold agent never recovers within the
-$15$k-episode budget.}
-\label{fig:a_warmstart}
-\end{minipage}
-\end{figure}
-
-\subsection{Configuration~B}
-
-\begin{figure}[H]
-\centering
+\vspace{2pt}
 \begin{minipage}{\textwidth}
 \centering
-\includegraphics[width=0.95\linewidth,height=0.22\textheight,keepaspectratio]%
+\includegraphics[width=0.94\linewidth,height=0.16\textheight,keepaspectratio]%
   {configB_tuned_grid.png}
-\caption{Config~B learning curves per algorithm with linear trend overlay
-(EMA-smoothed). The positive slope in each panel confirms active improvement
-throughout the $1$M-step budget; the trend magnitude quantifies the rate.}
+\caption{Configuration~B $1$M learning curves with $5$k evaluation callbacks and
+linear trend overlays. DQN and PPO keep positive trends; A2C slightly drifts down.}
 \label{fig:b_curves}
 \end{minipage}
 
-\vspace{4pt}
+\vspace{2pt}
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {configB_1m_robustness_survival.png}
-\caption{Survival by failure mode. Missing labs are the most damaging
-perturbation; acute events are irreducible for all policies.}
+\caption{Survival by failure mode under the final $1$M policies.}
 \label{fig:b_robust}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_bc_survival.png}
-\caption{Behavioural cloning vs random and expert by failure mode. BC matches
-the expert on clean episodes; the gap on noisy/missing episodes quantifies
-the cost of acting on corrupted observations.}
-\label{fig:b_bc}
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
+  {configB_1m_intensity.png}
+\caption{Treatment intensity: A2C is intensive; DQN buys the best survival.}
+\label{fig:b_intensity}
 \end{minipage}
 
-\vspace{4pt}
+\vspace{2pt}
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_multiseed.png}
-\caption{Inter-seed reliability ($3$ seeds, $300$k steps). Error bars are the
-standard deviation across seeds; the agents are stable.}
-\label{fig:b_multiseed}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_1m_dose_grid.png}
-\caption{Vasopressor $\times$ IV-fluid dose grids. A2C concentrates on the
-zero-treatment corner; DQN and PPO explore a broader treatment space.}
-\label{fig:b_dose}
-\end{minipage}
-
-\vspace{4pt}
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {configB_1m_feature_importance.png}
-\caption{DQN permutation feature importance. Established sepsis-severity markers
-(red) rank highest; SHAP rankings agree, strengthening the interpretation.}
+\caption{DQN feature importance; sepsis markers rank among the strongest signals.}
 \label{fig:b_feat}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {configB_overestimation.png}
-\caption{DQN value calibration: predicted Q vs realised return. The systematic
-upward bias ($+0.194$) confirms the max-operator overestimation; points should
-lie on the dashed diagonal for a calibrated estimator.}
+\caption{DQN value calibration; the positive bias motivates Double DQN.}
 \label{fig:b_overest}
 \end{minipage}
 
-\vspace{4pt}
+\vspace{2pt}
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_1m_learning_curves_zoom.png}
-\caption{Config~B learning curves: first $200$k steps. The early absorption of the
-SOFA shaping signal is visible as a rapid initial improvement before the rate
-slows toward the end of the exploration phase.}
-\label{fig:b_zoom}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_1m_robustness_return.png}
-\caption{Config~B mean return by failure mode. Complements the survival
-decomposition: the return gap between clean and missing-lab episodes reflects
-the accumulated intensity penalty in partial-observation episodes.}
-\label{fig:b_robust_ret}
-\end{minipage}
-
-\vspace{4pt}
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_1m_intensity.png}
-\caption{Mean treatment intensity per agent ($1$M run). A2C is the most
-parsimonious ($0.149$); DQN and PPO maintain moderate intensity while
-achieving higher survival.}
-\label{fig:b_intensity}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_shaping_survival.png}
-\caption{SOFA reward shaping ablation ($150$k steps): unshaped PPO vs shaped
-PPO vs random, by failure mode. Shaping lifts clean-episode survival; the
-effect is more pronounced at the full $1$M budget.}
-\label{fig:b_shaping}
-\end{minipage}
-
-\vspace{4pt}
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_shap_importance.png}
-\caption{SHAP feature importance on the DQN Q-network. Agreement with the
-permutation rankings (Fig.~\ref{fig:b_feat}) strengthens the interpretability
-claim; established sepsis-severity markers rank highest in both.}
-\label{fig:b_shap}
-\end{minipage}\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
-  {configB_1m_learning_curves_zoom.png}
-\caption{Learning curves: first $200$k steps. The rapid early improvement
-shows the SOFA shaping signal being absorbed before the rate slows as the
-policy converges.}
-\label{fig:b_zoom}
-\end{minipage}
-
-\subsection{Hyperparameter search (Optuna)}
-
-\begin{figure}[H]
-\centering
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {optuna_dqn_history.png}
-\caption{Optuna optimisation history for DQN ($15$ trials, $50$k steps each).
-The best trial achieves a materially better proxy return than the median.}
+\caption{Optuna optimisation history for the DQN proxy search.}
 \label{fig:optuna_hist}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
-\includegraphics[width=\linewidth,height=0.17\textheight,keepaspectratio]%
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {optuna_dqn_importance.png}
-\caption{Optuna hyperparameter importance for DQN. Learning rate and exploration
-fraction are the dominant factors; batch size and update interval are secondary.}
+\caption{Optuna importance; learning rate and exploration dominate.}
 \label{fig:optuna_imp}
 \end{minipage}
 \end{figure}
