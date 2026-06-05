@@ -35,7 +35,7 @@ BUCKETS_REPORTED = ["All", "Clean", "Noisy", "Missing"]
 
 results_path = Path("configB_multiseed_results.json")
 summary = {"metadata": {"seeds": SEEDS, "algos": ALGOS, "timesteps": TIMESTEPS,
-                        "shaping": True, "use_tuned": True,
+                        "shaping": False, "use_tuned": True,
                         "started_at": datetime.now().isoformat(timespec="seconds")},
            "per_seed": {}, "aggregated": {}}
 
@@ -53,7 +53,7 @@ for algo in ALGOS:
               f"@ {datetime.now().isoformat(timespec='seconds')} ===", flush=True)
         srl.train_agent(algo, timesteps=TIMESTEPS, normalize=True, seed=seed, tag=tag,
                         eval_freq=EVAL_FREQ, n_eval_episodes=N_EVAL_TRAIN,
-                        progress_bar=False, verbose=0, shaping=True, shaping_beta=0.05,
+                        progress_bar=False, verbose=0, shaping=False, shaping_beta=0.05,
                         hyperparams=tuned)
         res = srl.evaluate_conditions(tag, algo, n_episodes=N_EVAL_FINAL)
         summary["per_seed"][algo][str(seed)] = res
