@@ -36,9 +36,9 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from envs.wrappers import make_clinical_env, SofaShapingEnv
 from envs.env_setup import INTENSITY, N_ACTIONS
 
-# --------------------------------------------------------------------------- #
-# Globals / setup
-# --------------------------------------------------------------------------- #
+
+# GLOBALS / SETUP
+
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OUTPUT_DIR = "outputs"
@@ -136,9 +136,8 @@ def _summarise_buckets(raw, action_counts, tag: str = "") -> Dict[str, Dict[str,
     return results
 
 
-# --------------------------------------------------------------------------- #
-# Training
-# --------------------------------------------------------------------------- #
+# TRAINING
+
 class _SyncVecNormCallback(BaseCallback):
     """Copy VecNormalize running stats from the training env to the eval env so
     the 'best model' is selected on correctly normalized observations."""
@@ -229,9 +228,8 @@ def train_agent(
     return model, tag
 
 
-# --------------------------------------------------------------------------- #
-# Evaluation (robustness under clinical failure modes)
-# --------------------------------------------------------------------------- #
+# EVALUATION (robustness under clinical failure modes)
+
 def _load_obs_rms(tag: str):
     """Load VecNormalize obs statistics for a run, or None if not normalized."""
     path = os.path.join(MODELS_DIR, tag, "vecnormalize.pkl")
@@ -265,7 +263,7 @@ def evaluate_conditions(
     algo: str,
     n_episodes: int = 300,
     use_best: bool = True,
-    seed_offset: int = 20_000,   # offset from training seeds (0–9999) to avoid overlap
+    seed_offset: int = 20_000, # offset from training seeds (0–9999) to avoid overlap
 ) -> Dict[str, Dict[str, float]]:
     """Evaluate a trained agent on the DEFAULT clinical env, bucketing episodes
     by failure mode.
@@ -460,9 +458,8 @@ def load_tuned_hp(algo: str, path: str = "optuna_best_params.json") -> dict:
     return dict(hp)
 
 
-# --------------------------------------------------------------------------- #
-# Creative extension: clinical interpretability (feature importance)
-# --------------------------------------------------------------------------- #
+# CREATIVE EXTENSION: clinical interpretability (feature importance)
+
 def feature_importance_dqn(
     tag: str,
     n_states: int = 500,
@@ -559,7 +556,6 @@ def feature_importance_dqn(
     plt.show() if show else plt.close(fig)
     return importances, order
 
-
 def shap_importance_dqn(
     tag: str,
     n_background: int = 100,
@@ -651,9 +647,8 @@ def shap_importance_dqn(
     return importances, order
 
 
-# --------------------------------------------------------------------------- #
-# Learning from demonstrations: behavioural cloning of the clinician policy
-# --------------------------------------------------------------------------- #
+# LEARNING FROM DEMONSTRATIONS: behavioural cloning of the clinician policy
+
 class _BCNet(torch.nn.Module):
     """Small MLP classifier mapping a 47-dim observation to one of 25 actions."""
 
@@ -799,9 +794,9 @@ def evaluate_bc(bc: BCPolicy, n_episodes: int = 1000, seed_offset: int = 20_000)
     return _summarise_buckets(raw, action_counts, tag="bc")
 
 
-# --------------------------------------------------------------------------- #
-# Cross-config comparison (reads the Config A metrics from JSON)
-# --------------------------------------------------------------------------- #
+
+# CROSS-CONFIG COMPARISON (reads the Config A metrics from JSON)
+
 def compare_configs(
     results_b: Dict[str, Dict[str, object]],
     configA_path: str = "configA_results.json",
@@ -847,9 +842,9 @@ def compare_configs(
     return pd.DataFrame(rows)
 
 
-# --------------------------------------------------------------------------- #
-# Plotting (all saved to OUTPUT_DIR)
-# --------------------------------------------------------------------------- #
+
+# PLOTTING (all saved to OUTPUT_DIR)
+
 def _ema(values: np.ndarray, alpha: float = 0.3) -> np.ndarray:
     values = np.asarray(values, dtype=np.float64)
     if len(values) == 0:
@@ -859,7 +854,6 @@ def _ema(values: np.ndarray, alpha: float = 0.3) -> np.ndarray:
         out.append(alpha * v + (1 - alpha) * out[-1])
     return np.array(out)
 
-
 def _load_eval_log(tag: str):
     path = os.path.join(LOGS_DIR, tag, "evaluations.npz")
     if not os.path.exists(path):
@@ -867,8 +861,6 @@ def _load_eval_log(tag: str):
     data = np.load(path)
     results = data["results"]
     return data["timesteps"], results.mean(axis=1), results.std(axis=1)
-
-
 
 def plot_learning_curves(
     tags_labels: Dict[str, str],
@@ -937,7 +929,6 @@ def plot_learning_curves(
     print(f"Saved {path}")
     plt.show() if show else plt.close(fig)
     return path
-
 
 def plot_curves_grid(
     tags_labels: Dict[str, str],
@@ -1013,7 +1004,6 @@ def plot_curves_grid(
     plt.show() if show else plt.close(fig)
     return path
 
-
 def plot_robustness(
     results_by_agent: Dict[str, Dict[str, Dict[str, float]]],
     metric: str = "return",
@@ -1052,7 +1042,6 @@ def plot_robustness(
     print(f"Saved {path}")
     plt.show() if show else plt.close(fig)
     return path
-
 
 def results_table(
     results_by_agent: Dict[str, Dict[str, Dict[str, float]]],
@@ -1129,9 +1118,8 @@ def plot_dose_grid(
     return path
 
 
-# --------------------------------------------------------------------------- #
-# Hyperparameter tuning (Optuna) - short proxy budget
-# --------------------------------------------------------------------------- #
+# HYPERPARAMETER TUNING (Optuna) - short proxy budget
+
 def _suggest_hp(trial, algo: str) -> dict:
     # gamma is held fixed at GAMMA (1.0, the env convention) and is not tuned, so
     # it stays consistent with Config A and across all trials.
@@ -1162,7 +1150,6 @@ def _suggest_hp(trial, algo: str) -> dict:
         gae_lambda=trial.suggest_float("gae_lambda", 0.9, 1.0),
         ent_coef=trial.suggest_float("ent_coef", 1e-4, 0.05, log=True),
     )
-
 
 def tune(
     algo: str,
