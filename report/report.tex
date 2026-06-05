@@ -1029,8 +1029,9 @@ All figures are reproducible from the committed result files and the
 \centering
 \includegraphics[width=0.94\linewidth,height=0.16\textheight,keepaspectratio]%
   {configB_tuned_grid.png}
-\caption{Configuration~B $1$M learning curves with $5$k evaluation callbacks and
-linear trend overlays. DQN and PPO keep positive trends; A2C slightly drifts down.}
+\caption{Configuration~B $1$M learning curves (EMA, $\alpha=0.6$) with linear trend
+overlays. All three agents keep positive trends above the random baseline, DQN
+strongest ($+0.0069$/$100$k), with PPO and A2C close behind.}
 \label{fig:b_curves}
 \end{minipage}
 
@@ -1038,14 +1039,14 @@ linear trend overlays. DQN and PPO keep positive trends; A2C slightly drifts dow
 \begin{minipage}{0.48\textwidth}
 \centering
 \includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
-  {configB_1m_robustness_survival.png}
+  {robustness_failure_mode.png}
 \caption{Survival by failure mode under the final $1$M policies.}
 \label{fig:b_robust}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
 \includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
-  {configB_1m_intensity.png}
+  {configB_treat_intensity.png}
 \caption{Treatment intensity: A2C is the most parsimonious; DQN trades moderate intensity for the highest survival.}
 \label{fig:b_intensity}
 \end{minipage}
@@ -1054,14 +1055,14 @@ linear trend overlays. DQN and PPO keep positive trends; A2C slightly drifts dow
 \begin{minipage}{0.48\textwidth}
 \centering
 \includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
-  {configB_1m_feature_importance.png}
+  {dqn_feature_importance.png}
 \caption{DQN feature importance; sepsis markers rank among the strongest signals.}
 \label{fig:b_feat}
 \end{minipage}\hfill
 \begin{minipage}{0.48\textwidth}
 \centering
 \includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
-  {configB_overestimation.png}
+  {dqn_value_calibration.png}
 \caption{DQN value calibration; the positive bias motivates Double DQN.}
 \label{fig:b_overest}
 \end{minipage}
