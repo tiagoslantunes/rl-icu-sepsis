@@ -47,7 +47,8 @@ def evaluate_policy(policy: np.ndarray,
     -------
     dict with keys:
       'mean_return'      : float  – average episodic return.
-      'survival_rate'    : float  – fraction of episodes that survive (return > 0).
+      'survival_rate'    : float  – fraction of episodes where terminal reward > 0.5
+                                   (robustly separates survival from death; see code).
       'mean_ep_length'   : float  – average steps per episode.
       'mean_intensity'   : float  – average treatment intensity per step.
       'returns'          : ndarray of per-episode returns.
@@ -171,14 +172,14 @@ class PolicyIteration:
     P     : (S, A, S') transition probability tensor.
     R     : (S, A)     expected reward matrix  E[r | s, a].
     gamma : discount factor (default 1.0, as per ICU-Sepsis paper).
-    theta : convergence threshold for policy evaluation (default 1e-8).
+    theta : convergence threshold for policy evaluation (default 1e-9).
     """
 
     def __init__(self,
                  P: np.ndarray,
                  R: np.ndarray,
                  gamma: float = GAMMA,
-                 theta: float = 1e-8):
+                 theta: float = 1e-9):
         self.P     = P          # (S, A, S')
         self.R     = R          # (S, A)
         self.gamma = gamma

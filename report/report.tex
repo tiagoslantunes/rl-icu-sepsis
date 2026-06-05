@@ -830,7 +830,7 @@ multi-seed reliability reporting \cite{henderson2018} are all present and
 explicitly linked to the corresponding results.
 
 \textbf{Configuration~A versus Configuration~B.}
-The survival drop from $78.8\%$ (PI, A) to $70.6\%$ (DQN, B) is not evidence that
+The survival drop from $78.8\%$ (PI, A) to $70.8\%$ (DQN, B) is not evidence that
 deep RL is generally worse than tabular RL. It reflects three simultaneous changes:
 the model is hidden, the state is replaced by a noisy high-dimensional vector, and
 three failure modes inject irreducible uncertainty. Under the full clinical
@@ -844,8 +844,9 @@ demonstrates that the Pareto-optimal balance exists: high survival with low
 intensity. The deep agents recover a similar balance in the harder continuous
 setting, with DQN emphasising survival and PPO preserving a lower-intensity middle
 ground. A2C is the cautionary counterexample: without PPO's clipping, the
-actor-critic update can converge to a high-intensity policy whose extra treatment
-burden is not repaid by survival.
+actor-critic update over-optimises the parsimony penalty, converging to the
+lowest-intensity policy (intensity $0.121$) at the cost of survival --- the
+opposite failure mode from over-treatment, but equally suboptimal.
 
 
 % ============================================================
@@ -981,10 +982,6 @@ G.~Hooker, L.~Mentch and S.~Zhou,
 \textit{Unrestricted permutation forces extrapolation: variable importance
 requires at least one more model}, Statistics and Computing, vol.~31, 2021.
 
-\bibitem{raghu2017}
-A.~Raghu, M.~Komorowski, L.~A.~Celi, P.~Szolovits and M.~Ghassemi,
-\textit{Continuous State-Space Models for Optimal Sepsis Treatment},
-Machine Learning for Healthcare (MLHC), 2017.
 \end{thebibliography}
 
 
@@ -1022,7 +1019,8 @@ All figures are reproducible from the committed result files and the
 \includegraphics[width=0.94\linewidth,height=0.16\textheight,keepaspectratio]%
   {configB_tuned_grid.png}
 \caption{Configuration~B $1$M learning curves with $5$k evaluation callbacks and
-linear trend overlays. DQN and PPO keep positive trends; A2C slightly drifts down.}
+linear trend overlays. All three agents show positive slopes throughout $1$M steps;
+DQN has the steepest trend while PPO and A2C stabilise near expert-level survival.}
 \label{fig:b_curves}
 \end{minipage}
 
