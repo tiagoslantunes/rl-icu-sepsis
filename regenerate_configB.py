@@ -59,7 +59,7 @@ for algo, tag, label in RUNS:
     tags_labels[tag] = label.replace(" 1M", "")
 Path("configB_1m_results.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-# ── Figures (from the tuned logs / policies) ──
+# Figures (from the tuned logs / policies) 
 print("=== figures ===", flush=True)
 srl.plot_learning_curves(tags_labels, baseline=random_buckets["All"]["return"],
                          show_trend=True, filename="configB_1m_learning_curves.png",

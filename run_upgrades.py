@@ -16,9 +16,9 @@ Path("plots").mkdir(exist_ok=True)
 SEED = 42
 
 
-# --------------------------------------------------------------------------- #
+
 # 2. Config A bootstrap CIs  (also needed for the Pareto error bars)
-# --------------------------------------------------------------------------- #
+
 def _bootstrap_ci(values, n_boot=2000, alpha=0.05, seed=0):
     a = np.asarray(values, dtype=float)
     if a.size == 0:
@@ -66,9 +66,8 @@ def config_a_with_ci():
     return out
 
 
-# --------------------------------------------------------------------------- #
 # 1. Pareto: treatment intensity vs survival
-# --------------------------------------------------------------------------- #
+
 def pareto_plot(config_a):
     config_b = json.loads(Path("configB_1m_results.json").read_text(encoding="utf-8"))
 
@@ -104,9 +103,8 @@ def pareto_plot(config_a):
     print("Saved plots/configAB_pareto.png")
 
 
-# --------------------------------------------------------------------------- #
 # 3. DQN Q-value overestimation diagnostic
-# --------------------------------------------------------------------------- #
+
 def overestimation_diagnostic(tag="dqn_v2_1m", n_episodes=300):
     """Compare the DQN's predicted value of the greedy action at each visited state
     with the actual Monte Carlo return obtained from that state. A predicted value

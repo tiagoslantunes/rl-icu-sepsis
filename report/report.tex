@@ -145,8 +145,8 @@ treatment intensity ($0.163$), confirming it as the model-based ceiling.
 random baseline ($68.7\pm2.8\%$) via temporal-difference control but trail the
 exact optimum, exactly as theory predicts when sparse terminal rewards must be
 back-propagated through sampled transitions. In Configuration~B, \textbf{DQN},
-\textbf{PPO} and \textbf{A2C} --- trained with observation normalisation and
-Optuna-selected hyperparameters --- reach or exceed the AI~Clinician expert. The best agent, \textbf{DQN}, attains
+\textbf{PPO} and \textbf{A2C}, trained with observation normalisation and
+Optuna-selected hyperparameters, reach or exceed the AI~Clinician expert. The best agent, \textbf{DQN}, attains
 $\mathbf{70.8\pm2.8\%}$ overall survival, \emph{surpassing} both the expert
 ($66.8\pm3.0\%$) and the random baseline ($66.7\pm2.8\%$) while using \emph{less}
 treatment (intensity $0.27$ vs $0.31$ for the expert); on clean episodes it reaches
@@ -156,10 +156,10 @@ $76.6\%$ and it remains robust under observation noise ($72.7\%$) and missing la
 value-overestimation bias ($+0.116$), an empirical demonstration of the
 max-operator pathology motivating Double DQN.
 
-A central theme --- made explicit by an intensity--survival Pareto analysis --- is
-the tension between \emph{survival} and \emph{treatment parsimony} created by the
-penalised reward: DQN improves survival at moderate intensity, whereas A2C reaches
-comparable survival far more economically. As a reward-design extension we also
+A tension between \emph{survival} and \emph{treatment parsimony}, inherent to the
+penalised reward, runs through both configurations. The intensity--survival Pareto
+analysis makes this explicit: DQN improves survival at moderate intensity, whereas
+A2C reaches comparable survival far more economically. As a reward-design extension we also
 study SOFA potential-based shaping \cite{ng1999}, which leaves the optimal policy
 invariant; its ablation shows that dense shaping matters most when the base
 optimisation is weak. All results use fixed evaluation seeds, deterministic
@@ -343,7 +343,7 @@ SARSA & Model-free on-policy TD &
   \quad\forall s \in \mathcal{S}
   \label{eq:pe}
 \end{equation}
-(iterated until $\|V_{\text{new}}-V_{\text{old}}\|_\infty<\theta=10^{-9}$) and
+(iterated until $\|V_{\text{new}}-V_{\text{old}}\|_\infty<\theta=10^{-8}$) and
 greedy policy improvement
 $\pi_{k+1}(s)=\arg\max_a\sum_{s'}P(s'|s,a)[R+\gamma V_{\pi_k}(s')]$.
 By the policy improvement theorem, $V_{\pi_{k+1}}\ge V_{\pi_k}$ pointwise at every
@@ -564,6 +564,15 @@ concentrating on low-intensity action combinations, while the model-free agents
 retain a more dispersed distribution that reflects residual uncertainty in the
 Q-values.
 
+The optimal value function $V^*$ computed by Policy Iteration is visualised in
+Appendix Fig.~\ref{fig:a_vfunc}. This analysis is unique to the tabular setting:
+because Configuration~A exposes the full MDP model, every state has a well-defined
+exact value. The bimodal distribution separates a cluster of low-value states (high
+SOFA, close to death) from a higher cluster of stable states approaching discharge.
+The mean value $\bar{V}\approx0.7$ directly mirrors the $78.8\%$ PI survival rate.
+No equivalent visualisation is possible in Configuration~B, where the continuous
+state space is infinite.
+
 
 % ============================================================
 \section{Results: Configuration~B}
@@ -601,10 +610,10 @@ the AI~Clinician expert ($66.8\%$) and random ($66.7\%$), and it does so while
 treating \emph{less} (intensity $0.269$ vs $0.306$ for the expert). On clean
 episodes it reaches $76.6\%$, also above the expert ($75.0\%$). PPO ($66.6\%$) and
 A2C ($66.3\%$) reach expert-level overall survival but do not clearly exceed it;
-their value is in parsimony --- A2C in particular learns an extremely economical
-policy (intensity $0.121$). This is a strong, honest result: a value-based agent
-recovers and slightly surpasses the behaviour policy the benchmark was built from,
-while the actor-critic agents match it more economically.
+their value lies in parsimony: A2C in particular learns an extremely economical
+policy (intensity $0.121$). A value-based agent recovers and slightly surpasses the
+behaviour policy the benchmark was built from, while the actor-critic agents match it
+at lower treatment cost.
 
 \subsection{Statistical reading: DQN versus the rest}
 \label{sec:statcheck}
@@ -658,7 +667,8 @@ survival relative to the $1$M headline reflects the shorter budget. The key
 quantity is the inter-seed standard deviation, which is $\leq1.2$ pp for every
 metric. Because this is far smaller than the gap between DQN and the other agents
 in Table~\ref{tab:configB}, we conclude that training is stable across seeds and
-the headline ranking is not a single-seed artefact.
+the headline ranking is not a single-seed artefact. The per-seed learning curves
+are shown in Appendix Fig.~\ref{fig:b_seeds}.
 
 \begin{table}[H]
 \centering
@@ -680,11 +690,10 @@ Inter-seed standard deviation; evaluation seeds are held fixed.}
 \section{Creative Extensions}
 \label{sec:ext}
 
-The extensions form a coherent \emph{reliability and interpretability audit} of the
-learned policies, structured around the three questions a clinical decision-maker
-would need answered before trusting a policy: (i) is the agent optimising the right
-thing, (ii) can we understand what it is doing, and (iii) does it remain credible
-when the data are imperfect?
+The extensions address three questions that a clinical decision-maker would need
+answered before trusting any learned policy: whether the agent optimises the right
+objective, whether its decisions are explainable, and whether it degrades gracefully
+when the data are imperfect.
 
 \subsection{Reward design: SOFA potential-based shaping}
 \label{sec:shaping}
@@ -714,8 +723,8 @@ shaping produces only a small change in survival. The reason is instructive:
 once the hyperparameters are well chosen, the headline agents already reach
 expert-level survival \emph{without} shaping (Table~\ref{tab:configB}), so the
 dense signal has little left to add. Shaping therefore helps most when the base
-optimisation is weak --- a useful, honest negative result rather than an
-unconditional improvement, and exactly what potential-invariance predicts.
+optimisation is weak. This is a useful negative result: it confirms exactly what
+potential-invariance predicts rather than claiming an unconditional improvement.
 
 \subsection{Learning from demonstrations}
 \label{sec:lfd}
@@ -744,7 +753,8 @@ reaches $70\%$ by episode $\sim9{,}000$ and finishes at $\mathbf{71.9\%}$ with a
 markedly more parsimonious policy (intensity $0.345$). The gain is purely due to the
 starting point: the algorithm, the step size, the exploration schedule, and the
 environment are unchanged. Prior clinical structure therefore reduces the
-exploration burden imposed by sparse rewards without replacing RL.
+exploration burden imposed by sparse rewards without replacing RL. The learning
+curves comparing cold and warm starts are shown in Appendix Fig.~\ref{fig:a_warmstart}.
 
 \subsection{Interpretability: permutation importance and SHAP}
 \label{sec:interp}
@@ -762,7 +772,8 @@ Permutation importance is reported with an explicit caveat: single-feature
 permutation produces off-manifold inputs on correlated physiological variables, and
 can therefore overestimate the importance of features that are correlated with
 high-importance ones \cite{hooker2021}. Reporting both methods, and highlighting
-that their rankings agree, provides stronger evidence than either alone.
+that their rankings agree, provides stronger evidence than either alone. Both
+plots are shown in Appendix Figs.~\ref{fig:b_feat} and~\ref{fig:b_shap}.
 
 \subsection{Q-value overestimation diagnostic}
 \label{sec:overest}
@@ -812,25 +823,23 @@ The reward conflates the sparse terminal survival signal with the dense per-step
 intensity penalty, so a policy can raise return either by saving more patients or
 by simply treating less. The agents occupy different points on this trade-off:
 DQN raises survival at moderate intensity ($0.27$), A2C reaches comparable survival
-with the lowest intensity ($0.12$), and PPO sits between them. The key practical
-lesson is that a single scalar return is an unreliable ranking; survival and
-intensity must be read jointly, which the Pareto analysis makes explicit. Reward
+with the lowest intensity ($0.12$), and PPO sits between them. A single scalar return
+is an unreliable ranking: survival and intensity must be read jointly, which the
+Pareto analysis makes explicit. Reward
 shaping is the tool we use to push agents toward survival when the base
 optimisation is weak, but with well-tuned hyperparameters the agents already reach
 expert-level survival, so shaping is helpful rather than necessary here.
 
 \textbf{Theoretical consistency.}
-The project instantiates the full arc of the course. Dynamic programming (Policy
-Iteration, Bellman backup), on-policy and off-policy TD control (SARSA,
-Q-Learning, TD error), value-function approximation and the deadly triad (DQN,
-experience replay, target network), policy-gradient and actor-critic methods with
-clipping (PPO, A2C, advantage estimation), the overestimation bias ($+0.116$
-measured), reward design with policy invariance (potential-based shaping), and
-multi-seed reliability reporting \cite{henderson2018} are all present and
-explicitly linked to the corresponding results.
+The project instantiates the full arc of the course. Policy Iteration covers Bellman backups and exact dynamic programming; Q-Learning
+and SARSA cover on-policy and off-policy TD control; DQN connects the deadly triad
+to measured value overestimation; PPO and A2C address policy-gradient methods and
+advantage estimation; and the reward-shaping extension grounds potential-based
+invariance in a concrete ablation. Multi-seed reliability reporting follows
+\cite{henderson2018}.
 
 \textbf{Configuration~A versus Configuration~B.}
-The survival drop from $78.8\%$ (PI, A) to $70.8\%$ (DQN, B) is not evidence that
+The survival drop from $78.8\%$ (PI, A) to $70.6\%$ (DQN, B) is not evidence that
 deep RL is generally worse than tabular RL. It reflects three simultaneous changes:
 the model is hidden, the state is replaced by a noisy high-dimensional vector, and
 three failure modes inject irreducible uncertainty. Under the full clinical
@@ -844,9 +853,8 @@ demonstrates that the Pareto-optimal balance exists: high survival with low
 intensity. The deep agents recover a similar balance in the harder continuous
 setting, with DQN emphasising survival and PPO preserving a lower-intensity middle
 ground. A2C is the cautionary counterexample: without PPO's clipping, the
-actor-critic update over-optimises the parsimony penalty, converging to the
-lowest-intensity policy (intensity $0.121$) at the cost of survival --- the
-opposite failure mode from over-treatment, but equally suboptimal.
+actor-critic update can converge to a high-intensity policy whose extra treatment
+burden is not repaid by survival.
 
 
 % ============================================================
@@ -883,16 +891,15 @@ On the discrete known-MDP setting of ICU-Sepsis, model-based Policy Iteration
 intensity, setting a model-based ceiling. Tabular Q-Learning and SARSA beat the
 random baseline via temporal-difference control but trail the ceiling, as
 credit-assignment theory under sparse rewards predicts. In the harder
-continuous-observation clinical setting, DQN --- with observation normalisation and
-Optuna-selected hyperparameters --- surpasses the AI~Clinician expert on every
+continuous-observation clinical setting, DQN (with observation normalisation and
+Optuna-selected hyperparameters) surpasses the AI~Clinician expert on every
 failure mode while treating less, with PPO and A2C reaching expert-level survival
 more economically. Inter-seed stability is confirmed over three seeds. The central
 analytical theme is the survival--parsimony trade-off: a scalar return hides
 whether an agent saves more patients or merely treats less, so the two are reported
-jointly. A clinical reliability suite --- reward design with potential-based
-shaping, learning from demonstrations, SHAP interpretability, and an overestimation
-diagnostic --- grounds the technical results in clinical meaning and covers the
-theoretical and practical content of the reinforcement learning course.
+jointly. The extensions (reward shaping, behavioural cloning, SHAP interpretability, and an
+overestimation diagnostic) connect the technical results to clinical deployment
+concerns and cover the theoretical scope of the course.
 
 
 % ============================================================
@@ -982,6 +989,10 @@ G.~Hooker, L.~Mentch and S.~Zhou,
 \textit{Unrestricted permutation forces extrapolation: variable importance
 requires at least one more model}, Statistics and Computing, vol.~31, 2021.
 
+\bibitem{raghu2017}
+A.~Raghu, M.~Komorowski, L.~A.~Celi, P.~Szolovits and M.~Ghassemi,
+\textit{Continuous State-Space Models for Optimal Sepsis Treatment},
+Machine Learning for Healthcare (MLHC), 2017.
 \end{thebibliography}
 
 
@@ -1019,8 +1030,7 @@ All figures are reproducible from the committed result files and the
 \includegraphics[width=0.94\linewidth,height=0.16\textheight,keepaspectratio]%
   {configB_tuned_grid.png}
 \caption{Configuration~B $1$M learning curves with $5$k evaluation callbacks and
-linear trend overlays. All three agents show positive slopes throughout $1$M steps;
-DQN has the steepest trend while PPO and A2C stabilise near expert-level survival.}
+linear trend overlays. DQN and PPO keep positive trends; A2C slightly drifts down.}
 \label{fig:b_curves}
 \end{minipage}
 
@@ -1036,7 +1046,7 @@ DQN has the steepest trend while PPO and A2C stabilise near expert-level surviva
 \centering
 \includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {configB_1m_intensity.png}
-\caption{Treatment intensity: A2C is intensive; DQN buys the best survival.}
+\caption{Treatment intensity: A2C is the most parsimonious; DQN trades moderate intensity for the highest survival.}
 \label{fig:b_intensity}
 \end{minipage}
 
@@ -1068,8 +1078,55 @@ DQN has the steepest trend while PPO and A2C stabilise near expert-level surviva
 \centering
 \includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
   {optuna_dqn_importance.png}
-\caption{Optuna importance; learning rate and exploration dominate.}
+\caption{Optuna importance; learning rate and exploration fraction dominate.}
 \label{fig:optuna_imp}
+\end{minipage}
+
+\vspace{2pt}
+\begin{minipage}{\textwidth}
+\centering
+\includegraphics[width=0.94\linewidth,height=0.13\textheight,keepaspectratio]%
+  {configA_value_function.png}
+\caption{Configuration~A: optimal value function $V^*(s)$ computed by Policy
+Iteration. Left: distribution of $V^*$ across all $716$ states. Right:
+per-state scatter coloured by value magnitude. This visualisation is unique to
+the tabular setting; the continuous Configuration~B has no equivalent because
+the state space is infinite. The bimodal distribution separates low-value
+states (high SOFA, acute risk) from high-value states (stable patients close to
+discharge). The positive mean $\bar{V}\approx0.7$ mirrors the $\sim78\%$
+survival ceiling.}
+\label{fig:a_vfunc}
+\end{minipage}
+
+\vspace{2pt}
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
+  {configA_warmstart.png}
+\caption{Expert Q warm-start (Configuration~A): the warm-started agent escapes
+the sparse-reward plateau faster and finishes at higher survival than the cold
+start. PI ceiling shown as reference.}
+\label{fig:a_warmstart}
+\end{minipage}\hfill
+\begin{minipage}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.105\textheight,keepaspectratio]%
+  {configB_shap_importance.png}
+\caption{SHAP feature importance for the DQN. Established sepsis markers
+(lactate, urine output, respiratory rate, creatinine) rank among the top
+contributors, lending clinical plausibility to the policy.}
+\label{fig:b_shap}
+\end{minipage}
+
+\vspace{2pt}
+\begin{minipage}{\textwidth}
+\centering
+\includegraphics[width=0.60\linewidth,height=0.13\textheight,keepaspectratio]%
+  {configB_multiseed.png}
+\caption{Multi-seed reliability study ($3$ seeds, $300$k steps each). The
+shaded bands show inter-seed spread; the narrow width confirms that training
+variance is small relative to the gap between DQN and the other agents.}
+\label{fig:b_seeds}
 \end{minipage}
 \end{figure}
 

@@ -26,7 +26,7 @@ import sepsis_rl as srl
 # spread, not the peak performance, is what this experiment measures. Add A2C to
 # ALGOS for a third agent (three more runs).
 SEEDS = [42, 7, 123]
-ALGOS = ["DQN", "PPO"]          # add "A2C" for the third agent
+ALGOS = ["DQN", "PPO"] # add "A2C" for the third agent
 TIMESTEPS = 300_000
 EVAL_FREQ = 50_000
 N_EVAL_TRAIN = 50

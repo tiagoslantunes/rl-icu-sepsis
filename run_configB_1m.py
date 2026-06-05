@@ -53,7 +53,7 @@ print("=== RANDOM BASELINE (bucketed) ===", flush=True)
 random_buckets = srl.random_baseline_by_condition(n_episodes=N_EVAL_FINAL)
 random_stats = {"return": random_buckets["All"]["return"],
                 "survival": random_buckets["All"]["survival"]}
-results["Random"] = random_buckets          # shown as a group in the comparison plots
+results["Random"] = random_buckets  # shown as a group in the comparison plots
 summary["random"] = random_buckets
 
 print("=== EXPERT BASELINE (clinician policy, bucketed) ===", flush=True)
