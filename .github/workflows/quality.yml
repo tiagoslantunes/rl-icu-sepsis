@@ -1,0 +1,33 @@
+name: Quality checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Check Python syntax
+        run: python -m compileall -q envs sepsis_rl.py add_expert_ci.py regenerate_configB.py run_bc.py run_multiseed.py run_upgrades.py tests
+
+      - name: Validate notebook JSON
+        run: |
+          python -c "import json; json.load(open('rl_sepsis_configA.ipynb', encoding='utf-8'))"
+          python -c "import json; json.load(open('rl_sepsis_configB.ipynb', encoding='utf-8'))"
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v

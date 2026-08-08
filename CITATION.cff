@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this educational artifact, please cite it and contact the authors about reuse permissions."
+title: "Sepsis Treatment Optimization via Reinforcement Learning"
+type: software
+authors:
+  - given-names: Maria
+    family-names: Pimentel
+  - given-names: Gonçalo
+    family-names: Arrobas
+  - given-names: Tiago
+    family-names: Antunes
+repository-code: "https://github.com/tiagoslantunes/rl-icu-sepsis"
+date-released: 2026-06-05
