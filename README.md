@@ -15,9 +15,9 @@ Tabular RL &middot; deep RL &middot; clinical failure-mode robustness &middot; p
 </div>
 
 > [!IMPORTANT]
-> This is Tiago Antunes's portfolio fork of a collaborative Reinforcement Learning course
-> project. Full team attribution is preserved below and upstream provenance stays visible in
-> GitHub's fork metadata.
+> This is Tiago Antunes's portfolio publication of a collaborative Reinforcement Learning
+> course project, originating in [Maria Pimentel's repository](https://github.com/mariatavarespimentel/RL-ICU-Sepsis).
+> The team is credited below and its commit history is preserved.
 
 Reinforcement Learning course project for the MSc in Data Science & Advanced Analytics at
 NOVA IMS. We learn ICU sepsis treatment policies on the `Sepsis/ICU-Sepsis-v2` benchmark
@@ -27,6 +27,13 @@ parsimony penalty `lam=0.02`.
 > [!WARNING]
 > Results are produced on a **simulated** benchmark and are **not** clinical advice. No
 > patient-level data is contained in or redistributed by this repository.
+
+## Start here
+
+Read the [final report](report/report.pdf), then compare the
+[tabular notebook](rl_sepsis_configA.ipynb) with the
+[deep-RL notebook](rl_sepsis_configB.ipynb). The committed plots and result files
+can be inspected without installing the simulator or retraining agents.
 
 ## Highlights
 
